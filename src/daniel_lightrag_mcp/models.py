@@ -176,6 +176,7 @@ class DocumentInfo(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    file_path: Optional[str] = Field(None, description="Original file path")
 
 
 class DocumentsResponse(BaseModel):
