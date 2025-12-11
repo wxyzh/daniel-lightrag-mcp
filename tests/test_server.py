@@ -318,8 +318,74 @@ class TestDocumentManagementTools:
         
         # Verify
         assert not result.isError
-        mock_client.delete_document.assert_called_once_with("doc_123")
-    
+        mock_client.delete_document.assert_called_once_with(
+            doc_ids=["doc_123"],
+            delete_file=False,
+            delete_llm_cache=False
+        )
+
+    @patch('daniel_lightrag_mcp.server.lightrag_client')
+    async def test_delete_documents_batch_success(self, mock_client):
+        """Test successful batch document deletion."""
+        # Setup mock
+        mock_result = {"deleted": True, "document_ids": ["doc_1", "doc_2", "doc_3"]}
+        mock_client.delete_document = AsyncMock(return_value=mock_result)
+
+        # Create request
+        request = CallToolRequest(
+            method="tools/call",
+            params={
+                "name": "delete_document",
+                "arguments": {
+                    "document_ids": ["doc_1", "doc_2", "doc_3"],
+                    "delete_file": True,
+                    "delete_llm_cache": False
+                }
+            }
+        )
+
+        # Execute
+        result = await handle_call_tool(request)
+
+        # Verify
+        assert not result.isError
+        mock_client.delete_document.assert_called_once_with(
+            doc_ids=["doc_1", "doc_2", "doc_3"],
+            delete_file=True,
+            delete_llm_cache=False
+        )
+
+    @patch('daniel_lightrag_mcp.server.lightrag_client')
+    async def test_delete_document_with_options(self, mock_client):
+        """Test document deletion with additional options."""
+        # Setup mock
+        mock_result = {"deleted": True, "document_id": "doc_123"}
+        mock_client.delete_document = AsyncMock(return_value=mock_result)
+
+        # Create request
+        request = CallToolRequest(
+            method="tools/call",
+            params={
+                "name": "delete_document",
+                "arguments": {
+                    "document_id": "doc_123",
+                    "delete_file": True,
+                    "delete_llm_cache": True
+                }
+            }
+        )
+
+        # Execute
+        result = await handle_call_tool(request)
+
+        # Verify
+        assert not result.isError
+        mock_client.delete_document.assert_called_once_with(
+            doc_ids=["doc_123"],
+            delete_file=True,
+            delete_llm_cache=True
+        )
+
     @patch('daniel_lightrag_mcp.server.lightrag_client')
     async def test_clear_documents_success(self, mock_client):
         """Test successful document clearing."""

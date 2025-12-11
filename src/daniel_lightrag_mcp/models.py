@@ -77,8 +77,10 @@ class InsertTextsRequest(BaseModel):
 
 
 class DeleteDocRequest(BaseModel):
-    """Request model for deleting a document by ID."""
+    """Request model for deleting documents by IDs."""
     doc_ids: List[str] = Field(..., description="List of document IDs to delete")
+    delete_file: bool = Field(default=False, description="Whether to delete the corresponding file in the upload directory")
+    delete_llm_cache: bool = Field(default=False, description="Whether to delete cached LLM extraction results for the documents")
 
 
 class DeleteEntityRequest(BaseModel):

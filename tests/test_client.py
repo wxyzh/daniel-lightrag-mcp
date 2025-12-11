@@ -252,15 +252,48 @@ class TestDocumentManagementMethods:
         lightrag_client.client.post.assert_called_once()
     
     async def test_delete_document_success(self, lightrag_client, mock_response):
-        """Test successful document deletion."""
+        """Test successful single document deletion (backward compatibility)."""
         # Setup mock
         delete_response = {"deleted": True, "document_id": "doc_123"}
         response = mock_response(200, delete_response)
         lightrag_client.client.delete = AsyncMock(return_value=response)
-        
+
         # Execute
         result = await lightrag_client.delete_document("doc_123")
-        
+
+        # Verify
+        assert result.deleted is True
+        assert result.document_id == "doc_123"
+        lightrag_client.client.delete.assert_called_once()
+
+    async def test_delete_documents_batch_success(self, lightrag_client, mock_response):
+        """Test successful batch document deletion."""
+        # Setup mock
+        delete_response = {"deleted": True, "document_ids": ["doc_1", "doc_2", "doc_3"]}
+        response = mock_response(200, delete_response)
+        lightrag_client.client.delete = AsyncMock(return_value=response)
+
+        # Execute
+        result = await lightrag_client.delete_document(["doc_1", "doc_2", "doc_3"])
+
+        # Verify
+        assert result.deleted is True
+        lightrag_client.client.delete.assert_called_once()
+
+    async def test_delete_document_with_options(self, lightrag_client, mock_response):
+        """Test document deletion with file and cache deletion options."""
+        # Setup mock
+        delete_response = {"deleted": True, "document_id": "doc_123"}
+        response = mock_response(200, delete_response)
+        lightrag_client.client.delete = AsyncMock(return_value=response)
+
+        # Execute
+        result = await lightrag_client.delete_document(
+            "doc_123",
+            delete_file=True,
+            delete_llm_cache=True
+        )
+
         # Verify
         assert result.deleted is True
         assert result.document_id == "doc_123"

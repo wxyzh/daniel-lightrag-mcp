@@ -5,7 +5,7 @@ LightRAG API client for MCP server integration.
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Optional, AsyncGenerator
+from typing import Any, Dict, List, Optional, AsyncGenerator, Union
 import httpx
 from .models import (
     # Request models
@@ -352,9 +352,19 @@ class LightRAGClient:
         response_data = await self._make_request("POST", "/documents/paginated", request_data.model_dump())
         return PaginatedDocsResponse(**response_data)
     
-    async def delete_document(self, document_id: str) -> DeleteDocByIdResponse:
-        """Delete a document by ID from LightRAG."""
-        request_data = DeleteDocRequest(doc_ids=[document_id])
+    async def delete_document(self, doc_ids: Union[str, List[str]], delete_file: bool = False, delete_llm_cache: bool = False) -> DeleteDocByIdResponse:
+        """Delete document(s) by ID from LightRAG."""
+        # Support both single string ID and list of IDs for backward compatibility
+        if isinstance(doc_ids, str):
+            doc_ids_list = [doc_ids]
+        else:
+            doc_ids_list = doc_ids
+
+        request_data = DeleteDocRequest(
+            doc_ids=doc_ids_list,
+            delete_file=delete_file,
+            delete_llm_cache=delete_llm_cache
+        )
         response_data = await self._make_request("DELETE", "/documents/delete_document", request_data.model_dump())
         return DeleteDocByIdResponse(**response_data)
     
