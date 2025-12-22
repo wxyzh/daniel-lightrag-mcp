@@ -91,13 +91,16 @@ def _validate_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> None:
         "delete_document": [],  # Special validation logic for delete_document
         "query_text": ["query"],
         "query_text_stream": ["query"],
+        "query_data": ["query"],
         "check_entity_exists": ["entity_name"],
         "create_entity": ["entity_name", "properties"],
         "update_entity": ["entity_id", "properties"],
         "create_relation": ["source_entity", "target_entity", "properties"],
         "update_relation": ["source_id", "target_id", "updated_data"],
-        "delete_entity": ["entity_id"],
-        "delete_relation": ["relation_id"],
+        "delete_entity": ["entity_name"],
+        "delete_relation": ["source_entity", "target_entity"],
+        "get_popular_labels": [],
+        "search_labels": ["query"],
         "get_track_status": ["track_id"],
     }
     
@@ -123,9 +126,9 @@ def _validate_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> None:
         if not isinstance(page_size, int) or page_size < 1 or page_size > 100:
             raise LightRAGValidationError("Page size must be an integer between 1 and 100")
     
-    elif tool_name == "query_text" or tool_name == "query_text_stream":
-        mode = arguments.get("mode", "hybrid")
-        valid_modes = ["naive", "local", "global", "hybrid", "mix"]
+    elif tool_name in ["query_text", "query_text_stream", "query_data"]:
+        mode = arguments.get("mode", "mix")
+        valid_modes = ["naive", "local", "global", "hybrid", "mix", "bypass"]
         if mode not in valid_modes:
             raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
 
@@ -425,15 +428,17 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                 "required": []
             }
         ),
-        Tool(
-            name=_add_tool_prefix("get_documents"),
-            description=_add_description_prefix("Retrieve all documents from LightRAG"),
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        ),
+        # NOTE: get_documents is deprecated in LightRAG API (max 1000 records, no pagination)
+        # Use get_documents_paginated instead for better performance and flexibility
+        # Tool(
+        #     name=_add_tool_prefix("get_documents"),
+        #     description=_add_description_prefix("Retrieve all documents from LightRAG (deprecated, use get_documents_paginated instead)"),
+        #     inputSchema={
+        #         "type": "object",
+        #         "properties": {},
+        #         "required": []
+        #     }
+        # ),
         Tool(
             name=_add_tool_prefix("get_documents_paginated"),
             description=_add_description_prefix("Retrieve documents with pagination. IMPORTANT: page_size must be 10-100 (server enforces minimum for performance). Use page_size=20 for typical browsing."),
@@ -493,7 +498,7 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
         # ),
     ])
     
-    # Query Tools (2 tools)
+    # Query Tools (3 tools)
     tools.extend([
         Tool(
             name=_add_tool_prefix("query_text"),
@@ -503,13 +508,13 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Query text"
+                        "description": "Query text (min 3 characters)"
                     },
                     "mode": {
                         "type": "string",
-                        "description": "Query mode. Options: 'naive' (simple vector search), 'local' (entity-focused retrieval), 'global' (community summaries), 'hybrid' (combines local+global), 'mix' (knowledge graph + vector retrieval)",
-                        "enum": ["naive", "local", "global", "hybrid", "mix"],
-                        "default": "hybrid"
+                        "description": "Query mode. 'mix' recommended - integrates knowledge graph + vector retrieval. 'bypass' skips retrieval.",
+                        "enum": ["naive", "local", "global", "hybrid", "mix", "bypass"],
+                        "default": "mix"
                     },
                     "only_need_context": {
                         "type": "boolean",
@@ -523,7 +528,7 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "Number of top results to retrieve",
+                        "description": "Number of top entities/relations to retrieve",
                         "minimum": 1
                     },
                     "max_entity_tokens": {
@@ -538,8 +543,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                     },
                     "include_references": {
                         "type": "boolean",
-                        "description": "Whether to include references in response",
-                        "default": False
+                        "description": "Whether to include source references in response",
+                        "default": True
                     },
                     "include_chunk_content": {
                         "type": "boolean",
@@ -549,7 +554,7 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                     "enable_rerank": {
                         "type": "boolean",
                         "description": "Whether to enable reranking for better retrieval quality",
-                        "default": False
+                        "default": True
                     },
                     "conversation_history": {
                         "type": "array",
@@ -562,6 +567,20 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                             },
                             "required": ["role", "content"]
                         }
+                    },
+                    "hl_keywords": {
+                        "type": "array",
+                        "description": "High-level keywords for retrieval (auto-generated if empty)",
+                        "items": {"type": "string"}
+                    },
+                    "ll_keywords": {
+                        "type": "array",
+                        "description": "Low-level keywords for retrieval refinement (auto-generated if empty)",
+                        "items": {"type": "string"}
+                    },
+                    "response_type": {
+                        "type": "string",
+                        "description": "Response format (e.g., 'Multiple Paragraphs', 'Single Paragraph')"
                     }
                 },
                 "required": ["query"]
@@ -569,19 +588,19 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
         ),
         Tool(
             name=_add_tool_prefix("query_text_stream"),
-            description=_add_description_prefix("Stream query results from LightRAG"),
+            description=_add_description_prefix("Stream query results from LightRAG (real-time response delivery)"),
             inputSchema={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Query text"
+                        "description": "Query text (min 3 characters)"
                     },
                     "mode": {
                         "type": "string",
-                        "description": "Query mode. Options: 'naive' (simple vector search), 'local' (entity-focused retrieval), 'global' (community summaries), 'hybrid' (combines local+global), 'mix' (knowledge graph + vector retrieval)",
-                        "enum": ["naive", "local", "global", "hybrid", "mix"],
-                        "default": "hybrid"
+                        "description": "Query mode. 'mix' recommended - integrates knowledge graph + vector retrieval. 'bypass' skips retrieval.",
+                        "enum": ["naive", "local", "global", "hybrid", "mix", "bypass"],
+                        "default": "mix"
                     },
                     "only_need_context": {
                         "type": "boolean",
@@ -595,7 +614,7 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                     },
                     "top_k": {
                         "type": "integer",
-                        "description": "Number of top results to retrieve",
+                        "description": "Number of top entities/relations to retrieve",
                         "minimum": 1
                     },
                     "max_entity_tokens": {
@@ -610,8 +629,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                     },
                     "include_references": {
                         "type": "boolean",
-                        "description": "Whether to include references in response",
-                        "default": False
+                        "description": "Whether to include source references in response",
+                        "default": True
                     },
                     "include_chunk_content": {
                         "type": "boolean",
@@ -621,7 +640,93 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                     "enable_rerank": {
                         "type": "boolean",
                         "description": "Whether to enable reranking for better retrieval quality",
-                        "default": False
+                        "default": True
+                    },
+                    "conversation_history": {
+                        "type": "array",
+                        "description": "Conversation history for multi-turn queries",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "role": {"type": "string"},
+                                "content": {"type": "string"}
+                            },
+                            "required": ["role", "content"]
+                        }
+                    },
+                    "hl_keywords": {
+                        "type": "array",
+                        "description": "High-level keywords for retrieval (auto-generated if empty)",
+                        "items": {"type": "string"}
+                    },
+                    "ll_keywords": {
+                        "type": "array",
+                        "description": "Low-level keywords for retrieval refinement (auto-generated if empty)",
+                        "items": {"type": "string"}
+                    },
+                    "response_type": {
+                        "type": "string",
+                        "description": "Response format (e.g., 'Multiple Paragraphs', 'Single Paragraph')"
+                    }
+                },
+                "required": ["query"]
+            }
+        ),
+        Tool(
+            name=_add_tool_prefix("query_data"),
+            description=_add_description_prefix("Query LightRAG and retrieve raw data (entities, relationships, chunks) without LLM generation. Useful for debugging retrieval quality, data analysis, and custom processing."),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Query text (min 3 characters)"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "description": "Query mode. 'mix' returns entities + relationships + chunks. 'naive' returns only chunks. 'bypass' returns empty data.",
+                        "enum": ["naive", "local", "global", "hybrid", "mix", "bypass"],
+                        "default": "mix"
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Number of top entities/relations to retrieve",
+                        "minimum": 1
+                    },
+                    "chunk_top_k": {
+                        "type": "integer",
+                        "description": "Number of text chunks to retrieve from vector search",
+                        "minimum": 1
+                    },
+                    "max_entity_tokens": {
+                        "type": "integer",
+                        "description": "Maximum entity tokens for local mode",
+                        "minimum": 1
+                    },
+                    "max_relation_tokens": {
+                        "type": "integer",
+                        "description": "Maximum relation tokens for global mode",
+                        "minimum": 1
+                    },
+                    "max_total_tokens": {
+                        "type": "integer",
+                        "description": "Maximum total tokens budget for retrieval",
+                        "minimum": 1
+                    },
+                    "hl_keywords": {
+                        "type": "array",
+                        "description": "High-level keywords (auto-generated if empty)",
+                        "items": {"type": "string"}
+                    },
+                    "ll_keywords": {
+                        "type": "array",
+                        "description": "Low-level keywords for retrieval refinement (auto-generated if empty)",
+                        "items": {"type": "string"}
+                    },
+                    "enable_rerank": {
+                        "type": "boolean",
+                        "description": "Whether to enable reranking for chunks",
+                        "default": True
                     },
                     "conversation_history": {
                         "type": "array",
@@ -640,8 +745,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
     ])
-    
-    # Knowledge Graph Tools (9 tools)
+
+    # Knowledge Graph Tools (11 tools)
     tools.extend([
         Tool(
             name=_add_tool_prefix("get_knowledge_graph"),
@@ -659,6 +764,42 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                 "type": "object",
                 "properties": {},
                 "required": []
+            }
+        ),
+        Tool(
+            name=_add_tool_prefix("get_popular_labels"),
+            description=_add_description_prefix("Get popular labels by node degree (most connected entities). Useful for discovering core topics in the knowledge graph."),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of labels to return (default: 300, max: 1000)",
+                        "minimum": 1,
+                        "maximum": 1000
+                    }
+                },
+                "required": []
+            }
+        ),
+        Tool(
+            name=_add_tool_prefix("search_labels"),
+            description=_add_description_prefix("Search labels with fuzzy matching. Useful for finding entities by name fragments."),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query string (required)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results (default: 50, max: 100)",
+                        "minimum": 1,
+                        "maximum": 100
+                    }
+                },
+                "required": ["query"]
             }
         ),
         Tool(
@@ -685,13 +826,13 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                         "type": "string",
                         "description": "Name of the new entity"
                     },
-                    "properties": {
+                    "entity_data": {
                         "type": "object",
-                        "description": "Properties of the entity (e.g., description, entity_type)",
+                        "description": "Entity properties (e.g., description, entity_type)",
                         "additionalProperties": True
                     }
                 },
-                "required": ["entity_name", "properties"]
+                "required": ["entity_name", "entity_data"]
             }
         ),
         Tool(
@@ -700,16 +841,26 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "entity_id": {
+                    "entity_name": {
                         "type": "string",
-                        "description": "ID of the entity to update"
+                        "description": "Name of the entity to update"
                     },
-                    "properties": {
+                    "updated_data": {
                         "type": "object",
                         "description": "Properties to update"
+                    },
+                    "allow_rename": {
+                        "type": "boolean",
+                        "description": "Whether to allow entity renaming",
+                        "default": False
+                    },
+                    "allow_merge": {
+                        "type": "boolean",
+                        "description": "Whether to merge into existing entity when renaming",
+                        "default": False
                     }
                 },
-                "required": ["entity_id", "properties"]
+                "required": ["entity_name", "updated_data"]
             }
         ),
         # Tool(
@@ -766,41 +917,45 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                         "type": "string",
                         "description": "Target entity name"
                     },
-                    "properties": {
+                    "relation_data": {
                         "type": "object",
-                        "description": "Properties of the relation (e.g., description, keywords, weight)",
+                        "description": "Relation properties (e.g., description, keywords, weight)",
                         "additionalProperties": True
                     }
                 },
-                "required": ["source_entity", "target_entity", "properties"]
+                "required": ["source_entity", "target_entity", "relation_data"]
             }
         ),
         Tool(
             name=_add_tool_prefix("delete_entity"),
-            description=_add_description_prefix("Delete an entity from the knowledge graph"),
+            description=_add_description_prefix("Delete an entity from the knowledge graph by name"),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "entity_id": {
+                    "entity_name": {
                         "type": "string",
-                        "description": "ID of the entity to delete"
+                        "description": "Name of the entity to delete"
                     }
                 },
-                "required": ["entity_id"]
+                "required": ["entity_name"]
             }
         ),
         Tool(
             name=_add_tool_prefix("delete_relation"),
-            description=_add_description_prefix("Delete a relation from the knowledge graph"),
+            description=_add_description_prefix("Delete a relation from the knowledge graph by source and target entity names"),
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "relation_id": {
+                    "source_entity": {
                         "type": "string",
-                        "description": "ID of the relation to delete"
+                        "description": "Source entity name"
+                    },
+                    "target_entity": {
+                        "type": "string",
+                        "description": "Target entity name"
                     }
                 },
-                "required": ["relation_id"]
+                "required": ["source_entity", "target_entity"]
             }
         ),
     ])
@@ -1313,45 +1468,47 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 import traceback
                 logger.error(f"  - Full traceback: {traceback.format_exc()}")
                 raise
-        
-        elif tool_name == "get_documents":
-            logger.info("EXECUTING GET_DOCUMENTS TOOL:")
-            logger.info(f"  - Tool: {tool_name}")
-            logger.info(f"  - Client type: {type(lightrag_client)}")
-            logger.info(f"  - Client base_url: {lightrag_client.base_url}")
-            logger.info(f"  - Arguments: {arguments}")
-            logger.info("  - This tool requires no parameters")
-            logger.info("  - Calling lightrag_client.get_documents()...")
-            
-            try:
-                result = await lightrag_client.get_documents()
-                logger.info("GET_DOCUMENTS SUCCESS:")
-                logger.info(f"  - Result type: {type(result)}")
-                logger.info(f"  - Result content: {repr(result)}")
-                if hasattr(result, 'model_dump'):
-                    try:
-                        result_dump = result.model_dump()
-                        logger.info(f"  - Result.model_dump(): {result_dump}")
-                        statuses = result_dump.get('statuses', {})
-                        logger.info(f"DOCUMENT STATUSES:")
-                        for status, docs in statuses.items():
-                            logger.info(f"    - {status}: {len(docs) if docs else 0} documents")
-                            if docs and len(docs) > 0:
-                                logger.info(f"    - First {status} doc ID: {docs[0].get('id', 'N/A')}")
-                    except Exception as e:
-                        logger.error(f"  - model_dump() failed: {e}")
-                
-                response = _create_success_response(result, tool_name)
-                logger.info(f"  - Success response created")
-                return response
-            except Exception as e:
-                logger.error("GET_DOCUMENTS FAILED:")
-                logger.error(f"  - Exception type: {type(e)}")
-                logger.error(f"  - Exception message: {str(e)}")
-                import traceback
-                logger.error(f"  - Full traceback: {traceback.format_exc()}")
-                raise
-        
+
+        # NOTE: get_documents tool is commented out (deprecated in LightRAG API)
+        # Use get_documents_paginated instead
+        # elif tool_name == "get_documents":
+        #     logger.info("EXECUTING GET_DOCUMENTS TOOL:")
+        #     logger.info(f"  - Tool: {tool_name}")
+        #     logger.info(f"  - Client type: {type(lightrag_client)}")
+        #     logger.info(f"  - Client base_url: {lightrag_client.base_url}")
+        #     logger.info(f"  - Arguments: {arguments}")
+        #     logger.info("  - This tool requires no parameters")
+        #     logger.info("  - Calling lightrag_client.get_documents()...")
+        #
+        #     try:
+        #         result = await lightrag_client.get_documents()
+        #         logger.info("GET_DOCUMENTS SUCCESS:")
+        #         logger.info(f"  - Result type: {type(result)}")
+        #         logger.info(f"  - Result content: {repr(result)}")
+        #         if hasattr(result, 'model_dump'):
+        #             try:
+        #                 result_dump = result.model_dump()
+        #                 logger.info(f"  - Result.model_dump(): {result_dump}")
+        #                 statuses = result_dump.get('statuses', {})
+        #                 logger.info(f"DOCUMENT STATUSES:")
+        #                 for status, docs in statuses.items():
+        #                     logger.info(f"    - {status}: {len(docs) if docs else 0} documents")
+        #                     if docs and len(docs) > 0:
+        #                         logger.info(f"    - First {status} doc ID: {docs[0].get('id', 'N/A')}")
+        #             except Exception as e:
+        #                 logger.error(f"  - model_dump() failed: {e}")
+        #
+        #         response = _create_success_response(result, tool_name)
+        #         logger.info(f"  - Success response created")
+        #         return response
+        #     except Exception as e:
+        #         logger.error("GET_DOCUMENTS FAILED:")
+        #         logger.error(f"  - Exception type: {type(e)}")
+        #         logger.error(f"  - Exception message: {str(e)}")
+        #         import traceback
+        #         logger.error(f"  - Full traceback: {traceback.format_exc()}")
+        #         raise
+
         elif tool_name == "get_documents_paginated":
             logger.info("EXECUTING GET_DOCUMENTS_PAGINATED TOOL:")
             logger.info(f"  - Tool: {tool_name}")
@@ -1542,15 +1699,15 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
 
             # Extract and validate parameters
             query = arguments.get("query", "")
-            mode = arguments.get("mode", "hybrid")
+            mode = arguments.get("mode", "mix")
             only_need_context = arguments.get("only_need_context", False)
             only_need_prompt = arguments.get("only_need_prompt", False)
             top_k = arguments.get("top_k")
             max_entity_tokens = arguments.get("max_entity_tokens")
             max_relation_tokens = arguments.get("max_relation_tokens")
-            include_references = arguments.get("include_references", False)
+            include_references = arguments.get("include_references", True)
             include_chunk_content = arguments.get("include_chunk_content", False)
-            enable_rerank = arguments.get("enable_rerank", False)
+            enable_rerank = arguments.get("enable_rerank", True)
             conversation_history = arguments.get("conversation_history")
 
             logger.info(f"QUERY_TEXT PARAMETERS:")
@@ -1635,15 +1792,15 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
 
             # Extract and validate parameters
             query = arguments.get("query", "")
-            mode = arguments.get("mode", "hybrid")
+            mode = arguments.get("mode", "mix")
             only_need_context = arguments.get("only_need_context", False)
             only_need_prompt = arguments.get("only_need_prompt", False)
             top_k = arguments.get("top_k")
             max_entity_tokens = arguments.get("max_entity_tokens")
             max_relation_tokens = arguments.get("max_relation_tokens")
-            include_references = arguments.get("include_references", False)
+            include_references = arguments.get("include_references", True)
             include_chunk_content = arguments.get("include_chunk_content", False)
-            enable_rerank = arguments.get("enable_rerank", False)
+            enable_rerank = arguments.get("enable_rerank", True)
             conversation_history = arguments.get("conversation_history")
 
             logger.info(f"QUERY_TEXT_STREAM PARAMETERS:")
@@ -1665,7 +1822,7 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 logger.error("  - Query is empty or whitespace only")
                 raise LightRAGValidationError("Query cannot be empty")
 
-            valid_modes = ["naive", "local", "global", "hybrid", "mix"]
+            valid_modes = ["naive", "local", "global", "hybrid", "mix", "bypass"]
             if mode not in valid_modes:
                 logger.error("QUERY_TEXT_STREAM MODE ERROR:")
                 logger.error(f"  - Invalid mode: '{mode}'")
@@ -1735,8 +1892,92 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 import traceback
                 logger.error(f"  - Full traceback: {traceback.format_exc()}")
                 raise
-        
-        # Knowledge Graph Tools (9 tools)
+
+        elif tool_name == "query_data":
+            logger.info("EXECUTING QUERY_DATA TOOL:")
+            logger.info(f"  - Tool: {tool_name}")
+            logger.info(f"  - Client type: {type(lightrag_client)}")
+            logger.info(f"  - Client base_url: {lightrag_client.base_url}")
+            logger.info(f"  - Raw arguments: {arguments}")
+
+            # Extract parameters
+            query = arguments.get("query", "")
+            mode = arguments.get("mode", "mix")
+            top_k = arguments.get("top_k")
+            chunk_top_k = arguments.get("chunk_top_k")
+            max_entity_tokens = arguments.get("max_entity_tokens")
+            max_relation_tokens = arguments.get("max_relation_tokens")
+            max_total_tokens = arguments.get("max_total_tokens")
+            hl_keywords = arguments.get("hl_keywords")
+            ll_keywords = arguments.get("ll_keywords")
+            enable_rerank = arguments.get("enable_rerank", True)
+            conversation_history = arguments.get("conversation_history")
+
+            logger.info(f"QUERY_DATA PARAMETERS:")
+            logger.info(f"  - query: '{query}' (length: {len(query)})")
+            logger.info(f"  - mode: '{mode}'")
+            logger.info(f"  - top_k: {top_k}")
+            logger.info(f"  - chunk_top_k: {chunk_top_k}")
+            logger.info(f"  - max_entity_tokens: {max_entity_tokens}")
+            logger.info(f"  - max_relation_tokens: {max_relation_tokens}")
+            logger.info(f"  - max_total_tokens: {max_total_tokens}")
+            logger.info(f"  - hl_keywords: {hl_keywords}")
+            logger.info(f"  - ll_keywords: {ll_keywords}")
+            logger.info(f"  - enable_rerank: {enable_rerank}")
+            logger.info(f"  - conversation_history: {conversation_history}")
+
+            # Validate query
+            if not query or not query.strip():
+                logger.error("QUERY_DATA VALIDATION ERROR:")
+                logger.error("  - Query is empty or whitespace only")
+                raise LightRAGValidationError("Query cannot be empty")
+
+            valid_modes = ["naive", "local", "global", "hybrid", "mix", "bypass"]
+            if mode not in valid_modes:
+                logger.error("QUERY_DATA MODE ERROR:")
+                logger.error(f"  - Invalid mode: '{mode}'")
+                logger.error(f"  - Valid modes: {valid_modes}")
+                raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
+
+            logger.info("  - Parameter validation passed")
+            logger.info("  - Calling lightrag_client.query_data()...")
+
+            try:
+                result = await lightrag_client.query_data(
+                    query=query,
+                    mode=mode,
+                    top_k=top_k,
+                    chunk_top_k=chunk_top_k,
+                    max_entity_tokens=max_entity_tokens,
+                    max_relation_tokens=max_relation_tokens,
+                    max_total_tokens=max_total_tokens,
+                    hl_keywords=hl_keywords,
+                    ll_keywords=ll_keywords,
+                    enable_rerank=enable_rerank,
+                    conversation_history=conversation_history
+                )
+
+                logger.info("QUERY_DATA SUCCESS:")
+                logger.info(f"  - Result type: {type(result)}")
+                logger.info(f"  - Entity count: {len(result.data.entities)}")
+                logger.info(f"  - Relationship count: {len(result.data.relationships)}")
+                logger.info(f"  - Chunk count: {len(result.data.chunks)}")
+                logger.info(f"  - Reference count: {len(result.data.references)}")
+                logger.info(f"  - Metadata: mode={result.metadata.query_mode}")
+
+                response = _create_success_response(result, tool_name)
+                logger.info(f"  - Success response created")
+                return response
+
+            except Exception as e:
+                logger.error("QUERY_DATA FAILED:")
+                logger.error(f"  - Exception type: {type(e)}")
+                logger.error(f"  - Exception message: {str(e)}")
+                import traceback
+                logger.error(f"  - Full traceback: {traceback.format_exc()}")
+                raise
+
+        # Knowledge Graph Tools (11 tools)
         elif tool_name == "get_knowledge_graph":
             logger.info("EXECUTING GET_KNOWLEDGE_GRAPH TOOL:")
             logger.info(f"  - Tool: {tool_name}")
@@ -1833,7 +2074,84 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 import traceback
                 logger.error(f"  - Full traceback: {traceback.format_exc()}")
                 raise
-        
+
+        elif tool_name == "get_popular_labels":
+            logger.info("EXECUTING GET_POPULAR_LABELS TOOL:")
+            logger.info(f"  - Tool: {tool_name}")
+            logger.info(f"  - Client type: {type(lightrag_client)}")
+            logger.info(f"  - Client base_url: {lightrag_client.base_url}")
+            logger.info(f"  - Arguments: {arguments}")
+
+            limit = arguments.get("limit", 300)
+            logger.info(f"GET_POPULAR_LABELS PARAMETERS:")
+            logger.info(f"  - limit: {limit}")
+
+            logger.info("  - Calling lightrag_client.get_popular_labels()...")
+
+            try:
+                result = await lightrag_client.get_popular_labels(limit=limit)
+                logger.info("GET_POPULAR_LABELS SUCCESS:")
+                logger.info(f"  - Result type: {type(result)}")
+                labels = result.labels if hasattr(result, 'labels') else []
+                logger.info(f"  - Labels count: {len(labels)}")
+                if labels:
+                    logger.info(f"  - Top 10 labels: {labels[:10]}")
+
+                response = _create_success_response(result, tool_name)
+                logger.info(f"  - Success response created")
+                return result
+
+            except Exception as e:
+                logger.error("GET_POPULAR_LABELS FAILED:")
+                logger.error(f"  - Exception type: {type(e)}")
+                logger.error(f"  - Exception message: {str(e)}")
+                import traceback
+                logger.error(f"  - Full traceback: {traceback.format_exc()}")
+                raise
+
+        elif tool_name == "search_labels":
+            logger.info("EXECUTING SEARCH_LABELS TOOL:")
+            logger.info(f"  - Tool: {tool_name}")
+            logger.info(f"  - Client type: {type(lightrag_client)}")
+            logger.info(f"  - Client base_url: {lightrag_client.base_url}")
+            logger.info(f"  - Raw arguments: {arguments}")
+
+            query = arguments.get("query", "")
+            limit = arguments.get("limit", 50)
+
+            logger.info(f"SEARCH_LABELS PARAMETERS:")
+            logger.info(f"  - query: '{query}'")
+            logger.info(f"  - limit: {limit}")
+
+            if not query or not query.strip():
+                logger.error("SEARCH_LABELS VALIDATION ERROR:")
+                logger.error("  - Query is empty or whitespace only")
+                raise LightRAGValidationError("Search query cannot be empty")
+
+            logger.info("  - Parameter validation passed")
+            logger.info("  - Calling lightrag_client.search_labels()...")
+
+            try:
+                result = await lightrag_client.search_labels(query=query, limit=limit)
+                logger.info("SEARCH_LABELS SUCCESS:")
+                logger.info(f"  - Result type: {type(result)}")
+                labels = result.labels if hasattr(result, 'labels') else []
+                logger.info(f"  - Matched labels count: {len(labels)}")
+                if labels:
+                    logger.info(f"  - Labels: {labels}")
+
+                response = _create_success_response(result, tool_name)
+                logger.info(f"  - Success response created")
+                return result
+
+            except Exception as e:
+                logger.error("SEARCH_LABELS FAILED:")
+                logger.error(f"  - Exception type: {type(e)}")
+                logger.error(f"  - Exception message: {str(e)}")
+                import traceback
+                logger.error(f"  - Full traceback: {traceback.format_exc()}")
+                raise
+
         elif tool_name == "check_entity_exists":
             logger.info("EXECUTING CHECK_ENTITY_EXISTS TOOL:")
             logger.info(f"  - Tool: {tool_name}")
@@ -1890,33 +2208,33 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
             logger.info(f"  - Raw arguments: {arguments}")
 
             entity_name = arguments.get("entity_name", "")
-            properties = arguments.get("properties", {})
+            entity_data = arguments.get("entity_data", {})
             logger.info(f"CREATE_ENTITY PARAMETERS:")
             logger.info(f"  - entity_name: '{entity_name}'")
             logger.info(f"  - entity_name type: {type(entity_name)}")
-            logger.info(f"  - properties: {properties}")
-            logger.info(f"  - properties type: {type(properties)}")
-            logger.info(f"  - properties keys: {list(properties.keys()) if isinstance(properties, dict) else 'N/A'}")
+            logger.info(f"  - entity_data: {entity_data}")
+            logger.info(f"  - entity_data type: {type(entity_data)}")
+            logger.info(f"  - entity_data keys: {list(entity_data.keys()) if isinstance(entity_data, dict) else 'N/A'}")
 
             if not entity_name or not entity_name.strip():
                 logger.error("CREATE_ENTITY VALIDATION ERROR:")
                 logger.error("  - Entity name is empty or whitespace only")
                 raise LightRAGValidationError("Entity name cannot be empty")
 
-            if not isinstance(properties, dict):
+            if not isinstance(entity_data, dict):
                 logger.error("CREATE_ENTITY VALIDATION ERROR:")
-                logger.error(f"  - Properties must be a dictionary, got {type(properties)}")
-                raise LightRAGValidationError("Properties must be a dictionary")
+                logger.error(f"  - entity_data must be a dictionary, got {type(entity_data)}")
+                raise LightRAGValidationError("entity_data must be a dictionary")
 
-            if not properties:
+            if not entity_data:
                 logger.warning("CREATE_ENTITY WARNING:")
-                logger.warning("  - Properties dictionary is empty, creating entity with no properties")
+                logger.warning("  - entity_data dictionary is empty, creating entity with no properties")
 
             logger.info("  - Parameter validation passed")
             logger.info("  - Calling lightrag_client.create_entity()...")
 
             try:
-                result = await lightrag_client.create_entity(entity_name, properties)
+                result = await lightrag_client.create_entity(entity_name, entity_data)
                 logger.info("CREATE_ENTITY SUCCESS:")
                 logger.info(f"  - Result type: {type(result)}")
                 logger.info(f"  - Result content: {repr(result)}")
@@ -1949,35 +2267,40 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
             logger.info(f"  - Client type: {type(lightrag_client)}")
             logger.info(f"  - Client base_url: {lightrag_client.base_url}")
             logger.info(f"  - Raw arguments: {arguments}")
-            
-            entity_id = arguments.get("entity_id", "")
-            properties = arguments.get("properties", {})
+
+            entity_name = arguments.get("entity_name", "")
+            updated_data = arguments.get("updated_data", {})
+            allow_rename = arguments.get("allow_rename", False)
+            allow_merge = arguments.get("allow_merge", False)
+
             logger.info(f"UPDATE_ENTITY PARAMETERS:")
-            logger.info(f"  - entity_id: '{entity_id}'")
-            logger.info(f"  - entity_id type: {type(entity_id)}")
-            logger.info(f"  - properties: {properties}")
-            logger.info(f"  - properties type: {type(properties)}")
-            logger.info(f"  - properties keys: {list(properties.keys()) if isinstance(properties, dict) else 'N/A'}")
-            
-            if not entity_id or not entity_id.strip():
+            logger.info(f"  - entity_name: '{entity_name}'")
+            logger.info(f"  - entity_name type: {type(entity_name)}")
+            logger.info(f"  - updated_data: {updated_data}")
+            logger.info(f"  - updated_data type: {type(updated_data)}")
+            logger.info(f"  - updated_data keys: {list(updated_data.keys()) if isinstance(updated_data, dict) else 'N/A'}")
+            logger.info(f"  - allow_rename: {allow_rename}")
+            logger.info(f"  - allow_merge: {allow_merge}")
+
+            if not entity_name or not entity_name.strip():
                 logger.error("UPDATE_ENTITY VALIDATION ERROR:")
-                logger.error("  - Entity ID is empty or whitespace only")
-                raise LightRAGValidationError("Entity ID cannot be empty")
-            
-            if not isinstance(properties, dict):
+                logger.error("  - Entity name is empty or whitespace only")
+                raise LightRAGValidationError("Entity name cannot be empty")
+
+            if not isinstance(updated_data, dict):
                 logger.error("UPDATE_ENTITY VALIDATION ERROR:")
-                logger.error(f"  - Properties must be a dictionary, got {type(properties)}")
-                raise LightRAGValidationError("Properties must be a dictionary")
-            
-            if not properties:
+                logger.error(f"  - updated_data must be a dictionary, got {type(updated_data)}")
+                raise LightRAGValidationError("updated_data must be a dictionary")
+
+            if not updated_data:
                 logger.warning("UPDATE_ENTITY WARNING:")
-                logger.warning("  - Properties dictionary is empty, no updates will be made")
-            
+                logger.warning("  - updated_data dictionary is empty, no updates will be made")
+
             logger.info("  - Parameter validation passed")
             logger.info("  - Calling lightrag_client.update_entity()...")
-            
+
             try:
-                result = await lightrag_client.update_entity(entity_id, properties)
+                result = await lightrag_client.update_entity(entity_name, updated_data, allow_rename, allow_merge)
                 logger.info("UPDATE_ENTITY SUCCESS:")
                 logger.info(f"  - Result type: {type(result)}")
                 logger.info(f"  - Result content: {repr(result)}")
@@ -2125,14 +2448,14 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
 
             source_entity = arguments.get("source_entity", "")
             target_entity = arguments.get("target_entity", "")
-            properties = arguments.get("properties", {})
+            relation_data = arguments.get("relation_data", {})
 
             logger.info(f"CREATE_RELATION PARAMETERS:")
             logger.info(f"  - source_entity: '{source_entity}'")
             logger.info(f"  - target_entity: '{target_entity}'")
-            logger.info(f"  - properties: {properties}")
-            logger.info(f"  - properties type: {type(properties)}")
-            logger.info(f"  - properties keys: {list(properties.keys()) if isinstance(properties, dict) else 'N/A'}")
+            logger.info(f"  - relation_data: {relation_data}")
+            logger.info(f"  - relation_data type: {type(relation_data)}")
+            logger.info(f"  - relation_data keys: {list(relation_data.keys()) if isinstance(relation_data, dict) else 'N/A'}")
 
             if not source_entity or not source_entity.strip():
                 logger.error("CREATE_RELATION VALIDATION ERROR:")
@@ -2144,20 +2467,20 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 logger.error("  - Target entity is empty or whitespace only")
                 raise LightRAGValidationError("Target entity cannot be empty")
 
-            if not isinstance(properties, dict):
+            if not isinstance(relation_data, dict):
                 logger.error("CREATE_RELATION VALIDATION ERROR:")
-                logger.error(f"  - Properties must be a dictionary, got {type(properties)}")
-                raise LightRAGValidationError("Properties must be a dictionary")
+                logger.error(f"  - relation_data must be a dictionary, got {type(relation_data)}")
+                raise LightRAGValidationError("relation_data must be a dictionary")
 
-            if not properties:
+            if not relation_data:
                 logger.warning("CREATE_RELATION WARNING:")
-                logger.warning("  - Properties dictionary is empty, creating relation with no properties")
+                logger.warning("  - relation_data dictionary is empty, creating relation with no properties")
 
             logger.info("  - Parameter validation passed")
             logger.info("  - Calling lightrag_client.create_relation()...")
 
             try:
-                result = await lightrag_client.create_relation(source_entity, target_entity, properties)
+                result = await lightrag_client.create_relation(source_entity, target_entity, relation_data)
                 logger.info("CREATE_RELATION SUCCESS:")
                 logger.info(f"  - Result type: {type(result)}")
                 logger.info(f"  - Result content: {repr(result)}")
@@ -2192,23 +2515,23 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
             logger.info(f"  - Client type: {type(lightrag_client)}")
             logger.info(f"  - Client base_url: {lightrag_client.base_url}")
             logger.info(f"  - Raw arguments: {arguments}")
-            
-            entity_id = arguments.get("entity_id", "")
+
+            entity_name = arguments.get("entity_name", "")
             logger.info(f"DELETE_ENTITY PARAMETERS:")
-            logger.info(f"  - entity_id: '{entity_id}'")
-            logger.info(f"  - entity_id type: {type(entity_id)}")
-            
-            if not entity_id or not entity_id.strip():
+            logger.info(f"  - entity_name: '{entity_name}'")
+            logger.info(f"  - entity_name type: {type(entity_name)}")
+
+            if not entity_name or not entity_name.strip():
                 logger.error("DELETE_ENTITY VALIDATION ERROR:")
-                logger.error("  - Entity ID is empty or whitespace only")
-                raise LightRAGValidationError("Entity ID cannot be empty")
-            
+                logger.error("  - Entity name is empty or whitespace only")
+                raise LightRAGValidationError("Entity name cannot be empty")
+
             logger.info("  - Parameter validation passed")
             logger.info("  - Calling lightrag_client.delete_entity()...")
-            logger.warning(f"  - DESTRUCTIVE OPERATION: Deleting entity {entity_id}")
-            
+            logger.warning(f"  - DESTRUCTIVE OPERATION: Deleting entity {entity_name}")
+
             try:
-                result = await lightrag_client.delete_entity(entity_id)
+                result = await lightrag_client.delete_entity(entity_name)
                 logger.info("DELETE_ENTITY SUCCESS:")
                 logger.info(f"  - Result type: {type(result)}")
                 logger.info(f"  - Result content: {repr(result)}")
@@ -2240,23 +2563,30 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
             logger.info(f"  - Client type: {type(lightrag_client)}")
             logger.info(f"  - Client base_url: {lightrag_client.base_url}")
             logger.info(f"  - Raw arguments: {arguments}")
-            
-            relation_id = arguments.get("relation_id", "")
+
+            source_entity = arguments.get("source_entity", "")
+            target_entity = arguments.get("target_entity", "")
+
             logger.info(f"DELETE_RELATION PARAMETERS:")
-            logger.info(f"  - relation_id: '{relation_id}'")
-            logger.info(f"  - relation_id type: {type(relation_id)}")
-            
-            if not relation_id or not relation_id.strip():
+            logger.info(f"  - source_entity: '{source_entity}'")
+            logger.info(f"  - target_entity: '{target_entity}'")
+
+            if not source_entity or not source_entity.strip():
                 logger.error("DELETE_RELATION VALIDATION ERROR:")
-                logger.error("  - Relation ID is empty or whitespace only")
-                raise LightRAGValidationError("Relation ID cannot be empty")
-            
+                logger.error("  - Source entity is empty or whitespace only")
+                raise LightRAGValidationError("Source entity cannot be empty")
+
+            if not target_entity or not target_entity.strip():
+                logger.error("DELETE_RELATION VALIDATION ERROR:")
+                logger.error("  - Target entity is empty or whitespace only")
+                raise LightRAGValidationError("Target entity cannot be empty")
+
             logger.info("  - Parameter validation passed")
             logger.info("  - Calling lightrag_client.delete_relation()...")
-            logger.warning(f"  - DESTRUCTIVE OPERATION: Deleting relation {relation_id}")
-            
+            logger.warning(f"  - DESTRUCTIVE OPERATION: Deleting relation between {source_entity} and {target_entity}")
+
             try:
-                result = await lightrag_client.delete_relation(relation_id)
+                result = await lightrag_client.delete_relation(source_entity, target_entity)
                 logger.info("DELETE_RELATION SUCCESS:")
                 logger.info(f"  - Result type: {type(result)}")
                 logger.info(f"  - Result content: {repr(result)}")
