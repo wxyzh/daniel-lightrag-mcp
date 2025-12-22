@@ -334,7 +334,7 @@ class QueryDataRelation(BaseModel):
     tgt_id: str = Field(..., description="Target entity name")
     description: Optional[str] = Field(None, description="Relationship description")
     keywords: Optional[str] = Field(None, description="Comma-separated keywords")
-    weight: Optional[float] = Field(None, ge=0, le=1, description="Relationship weight")
+    weight: Optional[float] = Field(None, ge=0, description="Relationship weight (can exceed 1.0)")
     source_id: Optional[str] = Field(None, description="Source chunk ID")
     file_path: Optional[str] = Field(None, description="Path to the source file")
     reference_id: Optional[str] = Field(None, description="Reference identifier")
@@ -389,7 +389,7 @@ class RelationInfo(BaseModel):
     target_entity: str = Field(..., description="Target entity ID")
     type: str = Field(..., description="Relation type")
     properties: Dict[str, Any] = Field(default_factory=dict)
-    weight: Optional[float] = Field(None, ge=0, le=1)
+    weight: Optional[float] = Field(None, ge=0, description="Relation weight (can exceed 1.0)")
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
