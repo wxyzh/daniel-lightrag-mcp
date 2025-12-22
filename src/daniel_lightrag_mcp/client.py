@@ -15,9 +15,9 @@ from .models import (
     # Response models
     InsertResponse, ScanResponse, UploadResponse, DocumentsResponse, PaginatedDocsResponse,
     DeleteDocByIdResponse, ClearDocumentsResponse, PipelineStatusResponse, TrackStatusResponse,
-    StatusCountsResponse, ClearCacheResponse, DeletionResult, QueryResponse, GraphResponse,
+    StatusCountsResponse, ClearCacheResponse, DeletionResult, QueryResponse, QueryDataResponse, GraphResponse,
     LabelsResponse, EntityExistsResponse, EntityUpdateResponse, RelationUpdateResponse,
-    HealthResponse, TextDocument
+    HealthResponse, TextDocument, PopularLabelsResponse, SearchLabelsResponse
 )
 
 
@@ -161,7 +161,7 @@ class LightRAGClient:
                     response = await self.client.post(url, json=data)
             elif method.upper() == "DELETE":
                 if data:
-                    response = await self.client.request("DELETE", url, json=data)
+                    response = await self.client.delete(url, json=data)
                 else:
                     response = await self.client.delete(url)
             else:
@@ -373,20 +373,20 @@ class LightRAGClient:
         response_data = await self._make_request("DELETE", "/documents")
         return ClearDocumentsResponse(**response_data)
     
-    # Query Methods (2 methods)
+    # Query Methods (3 methods)
     
     async def query_text(
         self,
         query: str,
-        mode: str = "hybrid",
+        mode: str = "mix",
         only_need_context: bool = False,
         only_need_prompt: bool = False,
         top_k: Optional[int] = None,
         max_entity_tokens: Optional[int] = None,
         max_relation_tokens: Optional[int] = None,
-        include_references: bool = False,
+        include_references: bool = True,
         include_chunk_content: bool = False,
-        enable_rerank: bool = False,
+        enable_rerank: bool = True,
         conversation_history: Optional[List[Dict[str, str]]] = None
     ) -> QueryResponse:
         """Query LightRAG with text."""
@@ -396,7 +396,7 @@ class LightRAGClient:
         if not query or not query.strip():
             raise LightRAGValidationError("Query cannot be empty")
 
-        valid_modes = ["naive", "local", "global", "hybrid", "mix"]
+        valid_modes = ["naive", "local", "global", "hybrid", "mix", "bypass"]
         if mode not in valid_modes:
             raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
 
@@ -412,13 +412,14 @@ class LightRAGClient:
                 include_references=include_references,
                 include_chunk_content=include_chunk_content,
                 enable_rerank=enable_rerank,
-                conversation_history=conversation_history
+                conversation_history=conversation_history,
+                stream=False
             )
             response_data = await self._make_request("POST", "/query", request_data.model_dump())
             result = QueryResponse(**response_data)
 
-            result_count = len(result.results) if hasattr(result, 'results') and result.results else 0
-            self.logger.info(f"Query completed successfully, returned {result_count} results")
+            ref_count = len(result.references) if result.references else 0
+            self.logger.info(f"Query completed successfully, returned {ref_count} references")
             return result
         except Exception as e:
             self.logger.error(f"Query failed for mode '{mode}': {str(e)}")
@@ -429,15 +430,15 @@ class LightRAGClient:
     async def query_text_stream(
         self,
         query: str,
-        mode: str = "hybrid",
+        mode: str = "mix",
         only_need_context: bool = False,
         only_need_prompt: bool = False,
         top_k: Optional[int] = None,
         max_entity_tokens: Optional[int] = None,
         max_relation_tokens: Optional[int] = None,
-        include_references: bool = False,
+        include_references: bool = True,
         include_chunk_content: bool = False,
-        enable_rerank: bool = False,
+        enable_rerank: bool = True,
         conversation_history: Optional[List[Dict[str, str]]] = None
     ) -> AsyncGenerator[str, None]:
         """Stream query results from LightRAG."""
@@ -445,7 +446,7 @@ class LightRAGClient:
         if not query or not query.strip():
             raise LightRAGValidationError("Query cannot be empty")
 
-        valid_modes = ["naive", "local", "global", "hybrid", "mix"]
+        valid_modes = ["naive", "local", "global", "hybrid", "mix", "bypass"]
         if mode not in valid_modes:
             raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
 
@@ -473,9 +474,88 @@ class LightRAGClient:
             if isinstance(e, LightRAGError):
                 raise
             raise LightRAGError(f"Streaming query operation failed: {str(e)}")
-    
-    # Knowledge Graph Methods (8 methods)
-    
+
+    async def query_data(
+        self,
+        query: str,
+        mode: str = "mix",
+        top_k: Optional[int] = None,
+        chunk_top_k: Optional[int] = None,
+        max_entity_tokens: Optional[int] = None,
+        max_relation_tokens: Optional[int] = None,
+        max_total_tokens: Optional[int] = None,
+        hl_keywords: Optional[List[str]] = None,
+        ll_keywords: Optional[List[str]] = None,
+        enable_rerank: bool = True,
+        conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> QueryDataResponse:
+        """Query LightRAG and retrieve raw data without LLM generation.
+
+        This endpoint provides structured retrieval results (entities, relationships, chunks)
+        without LLM generation, perfect for:
+        - Debugging retrieval quality
+        - Data analysis and inspection
+        - Custom processing pipelines
+        - Extracting entities/relationships programmatically
+
+        Args:
+            query: The search query (min 3 characters)
+            mode: Query strategy - 'mix' recommended for best results
+            top_k: Number of top entities/relations to retrieve
+            chunk_top_k: Number of text chunks to retrieve
+            max_entity_tokens: Token limit for entity context
+            max_relation_tokens: Token limit for relationship context
+            max_total_tokens: Overall token budget for retrieval
+            hl_keywords: High-level keywords for retrieval (auto-generated if empty)
+            ll_keywords: Low-level keywords for retrieval refinement (auto-generated if empty)
+            enable_rerank: Whether to enable reranking for chunks
+            conversation_history: Previous dialogue context for multi-turn queries
+
+        Returns:
+            QueryDataResponse containing entities, relationships, chunks, and metadata
+        """
+        self.logger.info(f"Querying data with mode '{mode}': {query[:100]}{'...' if len(query) > 100 else ''}")
+
+        # Validate query parameters
+        if not query or not query.strip():
+            raise LightRAGValidationError("Query cannot be empty")
+
+        valid_modes = ["naive", "local", "global", "hybrid", "mix", "bypass"]
+        if mode not in valid_modes:
+            raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
+
+        try:
+            request_data = QueryRequest(
+                query=query,
+                mode=mode,
+                top_k=top_k,
+                chunk_top_k=chunk_top_k,
+                max_entity_tokens=max_entity_tokens,
+                max_relation_tokens=max_relation_tokens,
+                max_total_tokens=max_total_tokens,
+                hl_keywords=hl_keywords,
+                ll_keywords=ll_keywords,
+                enable_rerank=enable_rerank,
+                conversation_history=conversation_history,
+                include_references=True,  # query_data always includes references
+                stream=False
+            )
+            response_data = await self._make_request("POST", "/query/data", request_data.model_dump())
+            result = QueryDataResponse(**response_data)
+
+            entity_count = len(result.data.entities)
+            rel_count = len(result.data.relationships)
+            chunk_count = len(result.data.chunks)
+            self.logger.info(f"Query data completed: {entity_count} entities, {rel_count} relationships, {chunk_count} chunks")
+            return result
+        except Exception as e:
+            self.logger.error(f"Query data failed for mode '{mode}': {str(e)}")
+            if isinstance(e, LightRAGError):
+                raise
+            raise LightRAGError(f"Query data operation failed: {str(e)}")
+
+    # Knowledge Graph Methods (10 methods)
+
     async def get_knowledge_graph(self, label: str = "*") -> GraphResponse:
         """Retrieve the knowledge graph from LightRAG."""
         params = {"label": label}
@@ -489,25 +569,68 @@ class LightRAGClient:
         if isinstance(response_data, list):
             response_data = {"labels": response_data}
         return LabelsResponse(**response_data)
-    
+
+    async def get_popular_labels(self, limit: int = 300) -> PopularLabelsResponse:
+        """Get popular labels by node degree (most connected entities).
+
+        Args:
+            limit: Maximum number of labels to return (default: 300, max: 1000)
+
+        Returns:
+            PopularLabelsResponse containing list of popular labels sorted by degree
+        """
+        if limit < 1:
+            limit = 1
+        if limit > 1000:
+            limit = 1000
+        params = {"limit": limit}
+        response_data = await self._make_request("GET", "/graph/label/popular", params=params)
+        if isinstance(response_data, list):
+            response_data = {"labels": response_data}
+        return PopularLabelsResponse(**response_data)
+
+    async def search_labels(self, query: str, limit: int = 50) -> SearchLabelsResponse:
+        """Search labels with fuzzy matching.
+
+        Args:
+            query: Search query string
+            limit: Maximum number of results (default: 50, max: 100)
+
+        Returns:
+            SearchLabelsResponse containing list of matching labels sorted by relevance
+        """
+        if not query or not query.strip():
+            raise LightRAGValidationError("Search query cannot be empty")
+        if limit < 1:
+            limit = 1
+        if limit > 100:
+            limit = 100
+        params = {"q": query, "limit": limit}
+        response_data = await self._make_request("GET", "/graph/label/search", params=params)
+        if isinstance(response_data, list):
+            response_data = {"labels": response_data}
+        return SearchLabelsResponse(**response_data)
+
     async def check_entity_exists(self, entity_name: str) -> EntityExistsResponse:
         """Check if an entity exists in the knowledge graph."""
         params = {"name": entity_name}
         response_data = await self._make_request("GET", "/graph/entity/exists", params=params)
         return EntityExistsResponse(**response_data)
 
-    async def create_entity(self, entity_name: str, properties: Dict[str, Any]) -> EntityUpdateResponse:
+    async def create_entity(self, entity_name: str, entity_data: Dict[str, Any]) -> EntityUpdateResponse:
         """Create a new entity in the knowledge graph."""
-        request_data = CreateEntityRequest(entity_name=entity_name, properties=properties)
+        request_data = CreateEntityRequest(entity_name=entity_name, entity_data=entity_data)
         response_data = await self._make_request("POST", "/graph/entity/create", request_data.model_dump())
         return EntityUpdateResponse(**response_data)
 
-    async def update_entity(self, entity_id: str, properties: Dict[str, Any], entity_name: Optional[str] = None) -> EntityUpdateResponse:
+    async def update_entity(self, entity_name: str, updated_data: Dict[str, Any], allow_rename: bool = False, allow_merge: bool = False) -> EntityUpdateResponse:
         """Update an entity in the knowledge graph."""
-        # Use entity_id as entity_name if not provided
-        if entity_name is None:
-            entity_name = entity_id
-        request_data = EntityUpdateRequest(entity_id=entity_id, entity_name=entity_name, updated_data=properties)
+        request_data = EntityUpdateRequest(
+            entity_name=entity_name,
+            updated_data=updated_data,
+            allow_rename=allow_rename,
+            allow_merge=allow_merge
+        )
         response_data = await self._make_request("POST", "/graph/entity/edit", request_data.model_dump())
         return EntityUpdateResponse(**response_data)
     
@@ -527,29 +650,26 @@ class LightRAGClient:
         response_data = await self._make_request("POST", "/graph/relation/edit", request_data.model_dump())
         return RelationUpdateResponse(**response_data)
 
-    async def create_relation(self, source_entity: str, target_entity: str, properties: Dict[str, Any]) -> RelationUpdateResponse:
+    async def create_relation(self, source_entity: str, target_entity: str, relation_data: Dict[str, Any]) -> RelationUpdateResponse:
         """Create a new relation in the knowledge graph."""
         request_data = CreateRelationRequest(
             source_entity=source_entity,
             target_entity=target_entity,
-            properties=properties
+            relation_data=relation_data
         )
         response_data = await self._make_request("POST", "/graph/relation/create", request_data.model_dump())
         return RelationUpdateResponse(**response_data)
 
-    async def delete_entity(self, entity_id: str, entity_name: Optional[str] = None) -> DeletionResult:
-        """Delete an entity from the knowledge graph."""
-        # Use entity_id as entity_name if not provided
-        if entity_name is None:
-            entity_name = entity_id
-        request_data = DeleteEntityRequest(entity_id=entity_id, entity_name=entity_name)
-        response_data = await self._make_request("DELETE", "/rag/delete_by_entity", request_data.model_dump())
+    async def delete_entity(self, entity_name: str) -> DeletionResult:
+        """Delete an entity from the knowledge graph by name."""
+        request_data = DeleteEntityRequest(entity_name=entity_name)
+        response_data = await self._make_request("DELETE", "/documents/delete_entity", request_data.model_dump())
         return DeletionResult(**response_data)
-    
-    async def delete_relation(self, relation_id: str, source_entity: str = "unknown", target_entity: str = "unknown") -> DeletionResult:
-        """Delete a relation from the knowledge graph."""
-        request_data = DeleteRelationRequest(relation_id=relation_id, source_entity=source_entity, target_entity=target_entity)
-        response_data = await self._make_request("DELETE", "/rag/delete_by_relation", request_data.model_dump())
+
+    async def delete_relation(self, source_entity: str, target_entity: str) -> DeletionResult:
+        """Delete a relation from the knowledge graph by source and target entity names."""
+        request_data = DeleteRelationRequest(source_entity=source_entity, target_entity=target_entity)
+        response_data = await self._make_request("DELETE", "/documents/delete_relation", request_data.model_dump())
         return DeletionResult(**response_data)
     
     # System Management Methods (4 methods)
