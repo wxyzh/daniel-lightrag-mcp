@@ -123,7 +123,7 @@ def _validate_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> None:
     
     elif tool_name == "query_text" or tool_name == "query_text_stream":
         mode = arguments.get("mode", "hybrid")
-        valid_modes = ["naive", "local", "global", "hybrid"]
+        valid_modes = ["naive", "local", "global", "hybrid", "mix"]
         if mode not in valid_modes:
             raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
 
@@ -505,14 +505,61 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                     },
                     "mode": {
                         "type": "string",
-                        "description": "Query mode",
-                        "enum": ["naive", "local", "global", "hybrid"],
+                        "description": "Query mode. Options: 'naive' (simple vector search), 'local' (entity-focused retrieval), 'global' (community summaries), 'hybrid' (combines local+global), 'mix' (knowledge graph + vector retrieval)",
+                        "enum": ["naive", "local", "global", "hybrid", "mix"],
                         "default": "hybrid"
                     },
                     "only_need_context": {
                         "type": "boolean",
                         "description": "Whether to only return context without generation",
                         "default": False
+                    },
+                    "only_need_prompt": {
+                        "type": "boolean",
+                        "description": "Whether to only return the prompt",
+                        "default": False
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Number of top results to retrieve",
+                        "minimum": 1
+                    },
+                    "max_entity_tokens": {
+                        "type": "integer",
+                        "description": "Maximum entity tokens for local mode",
+                        "minimum": 1
+                    },
+                    "max_relation_tokens": {
+                        "type": "integer",
+                        "description": "Maximum relation tokens for global mode",
+                        "minimum": 1
+                    },
+                    "include_references": {
+                        "type": "boolean",
+                        "description": "Whether to include references in response",
+                        "default": False
+                    },
+                    "include_chunk_content": {
+                        "type": "boolean",
+                        "description": "Whether to include chunk content in references (requires include_references=true)",
+                        "default": False
+                    },
+                    "enable_rerank": {
+                        "type": "boolean",
+                        "description": "Whether to enable reranking for better retrieval quality",
+                        "default": False
+                    },
+                    "conversation_history": {
+                        "type": "array",
+                        "description": "Conversation history for multi-turn queries",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "role": {"type": "string"},
+                                "content": {"type": "string"}
+                            },
+                            "required": ["role", "content"]
+                        }
                     }
                 },
                 "required": ["query"]
@@ -530,14 +577,61 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                     },
                     "mode": {
                         "type": "string",
-                        "description": "Query mode",
-                        "enum": ["naive", "local", "global", "hybrid"],
+                        "description": "Query mode. Options: 'naive' (simple vector search), 'local' (entity-focused retrieval), 'global' (community summaries), 'hybrid' (combines local+global), 'mix' (knowledge graph + vector retrieval)",
+                        "enum": ["naive", "local", "global", "hybrid", "mix"],
                         "default": "hybrid"
                     },
                     "only_need_context": {
                         "type": "boolean",
                         "description": "Whether to only return context without generation",
                         "default": False
+                    },
+                    "only_need_prompt": {
+                        "type": "boolean",
+                        "description": "Whether to only return the prompt",
+                        "default": False
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Number of top results to retrieve",
+                        "minimum": 1
+                    },
+                    "max_entity_tokens": {
+                        "type": "integer",
+                        "description": "Maximum entity tokens for local mode",
+                        "minimum": 1
+                    },
+                    "max_relation_tokens": {
+                        "type": "integer",
+                        "description": "Maximum relation tokens for global mode",
+                        "minimum": 1
+                    },
+                    "include_references": {
+                        "type": "boolean",
+                        "description": "Whether to include references in response",
+                        "default": False
+                    },
+                    "include_chunk_content": {
+                        "type": "boolean",
+                        "description": "Whether to include chunk content in references (requires include_references=true)",
+                        "default": False
+                    },
+                    "enable_rerank": {
+                        "type": "boolean",
+                        "description": "Whether to enable reranking for better retrieval quality",
+                        "default": False
+                    },
+                    "conversation_history": {
+                        "type": "array",
+                        "description": "Conversation history for multi-turn queries",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "role": {"type": "string"},
+                                "content": {"type": "string"}
+                            },
+                            "required": ["role", "content"]
+                        }
                     }
                 },
                 "required": ["query"]
@@ -1401,37 +1495,62 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
             logger.info(f"  - Client type: {type(lightrag_client)}")
             logger.info(f"  - Client base_url: {lightrag_client.base_url}")
             logger.info(f"  - Raw arguments: {arguments}")
-            
+
             # Extract and validate parameters
             query = arguments.get("query", "")
             mode = arguments.get("mode", "hybrid")
             only_need_context = arguments.get("only_need_context", False)
-            
+            only_need_prompt = arguments.get("only_need_prompt", False)
+            top_k = arguments.get("top_k")
+            max_entity_tokens = arguments.get("max_entity_tokens")
+            max_relation_tokens = arguments.get("max_relation_tokens")
+            include_references = arguments.get("include_references", False)
+            include_chunk_content = arguments.get("include_chunk_content", False)
+            enable_rerank = arguments.get("enable_rerank", False)
+            conversation_history = arguments.get("conversation_history")
+
             logger.info(f"QUERY_TEXT PARAMETERS:")
             logger.info(f"  - query: '{query}' (length: {len(query)})")
             logger.info(f"  - mode: '{mode}'")
             logger.info(f"  - only_need_context: {only_need_context}")
-            logger.info(f"  - query type: {type(query)}")
-            
+            logger.info(f"  - only_need_prompt: {only_need_prompt}")
+            logger.info(f"  - top_k: {top_k}")
+            logger.info(f"  - max_entity_tokens: {max_entity_tokens}")
+            logger.info(f"  - max_relation_tokens: {max_relation_tokens}")
+            logger.info(f"  - include_references: {include_references}")
+            logger.info(f"  - include_chunk_content: {include_chunk_content}")
+            logger.info(f"  - enable_rerank: {enable_rerank}")
+            logger.info(f"  - conversation_history: {conversation_history}")
+
             # Validate query
             if not query or not query.strip():
                 logger.error("QUERY_TEXT VALIDATION ERROR:")
                 logger.error("  - Query is empty or whitespace only")
                 raise LightRAGValidationError("Query cannot be empty")
-            
-            valid_modes = ["naive", "local", "global", "hybrid"]
+
+            valid_modes = ["naive", "local", "global", "hybrid", "mix"]
             if mode not in valid_modes:
                 logger.error("QUERY_TEXT MODE ERROR:")
                 logger.error(f"  - Invalid mode: '{mode}'")
                 logger.error(f"  - Valid modes: {valid_modes}")
                 raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
-            
+
             logger.info("  - Parameter validation passed")
             logger.info("  - Calling lightrag_client.query_text()...")
-            
+
             try:
                 result = await lightrag_client.query_text(
-                    query, mode=mode, only_need_context=only_need_context
+                    query,
+                    mode=mode,
+                    only_need_context=only_need_context,
+                    only_need_prompt=only_need_prompt,
+                    top_k=top_k,
+                    max_entity_tokens=max_entity_tokens,
+                    max_relation_tokens=max_relation_tokens,
+                    include_references=include_references,
+                    include_chunk_content=include_chunk_content,
+                    enable_rerank=enable_rerank,
+                    conversation_history=conversation_history
                 )
                 logger.info("QUERY_TEXT SUCCESS:")
                 logger.info(f"  - Result type: {type(result)}")
@@ -1446,7 +1565,7 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                         logger.info(f"  - Results count: {len(result_dump.get('results', []))}")
                     except Exception as e:
                         logger.error(f"  - model_dump() failed: {e}")
-                
+
                 logger.info("  - Calling _create_success_response()...")
                 response = _create_success_response(result, tool_name)
                 logger.info(f"  - Success response type: {type(response)}")
@@ -1459,7 +1578,6 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 logger.error(f"  - Exception args: {e.args}")
                 logger.error(f"  - Query: '{query}'")
                 logger.error(f"  - Mode: '{mode}'")
-                logger.error(f"  - Only need context: {only_need_context}")
                 import traceback
                 logger.error(f"  - Full traceback: {traceback.format_exc()}")
                 raise
@@ -1470,73 +1588,98 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
             logger.info(f"  - Client type: {type(lightrag_client)}")
             logger.info(f"  - Client base_url: {lightrag_client.base_url}")
             logger.info(f"  - Raw arguments: {arguments}")
-            
+
             # Extract and validate parameters
             query = arguments.get("query", "")
             mode = arguments.get("mode", "hybrid")
             only_need_context = arguments.get("only_need_context", False)
-            
+            only_need_prompt = arguments.get("only_need_prompt", False)
+            top_k = arguments.get("top_k")
+            max_entity_tokens = arguments.get("max_entity_tokens")
+            max_relation_tokens = arguments.get("max_relation_tokens")
+            include_references = arguments.get("include_references", False)
+            include_chunk_content = arguments.get("include_chunk_content", False)
+            enable_rerank = arguments.get("enable_rerank", False)
+            conversation_history = arguments.get("conversation_history")
+
             logger.info(f"QUERY_TEXT_STREAM PARAMETERS:")
             logger.info(f"  - query: '{query}' (length: {len(query)})")
             logger.info(f"  - mode: '{mode}'")
             logger.info(f"  - only_need_context: {only_need_context}")
-            logger.info(f"  - query type: {type(query)}")
-            
+            logger.info(f"  - only_need_prompt: {only_need_prompt}")
+            logger.info(f"  - top_k: {top_k}")
+            logger.info(f"  - max_entity_tokens: {max_entity_tokens}")
+            logger.info(f"  - max_relation_tokens: {max_relation_tokens}")
+            logger.info(f"  - include_references: {include_references}")
+            logger.info(f"  - include_chunk_content: {include_chunk_content}")
+            logger.info(f"  - enable_rerank: {enable_rerank}")
+            logger.info(f"  - conversation_history: {conversation_history}")
+
             # Validate query
             if not query or not query.strip():
                 logger.error("QUERY_TEXT_STREAM VALIDATION ERROR:")
                 logger.error("  - Query is empty or whitespace only")
                 raise LightRAGValidationError("Query cannot be empty")
-            
-            valid_modes = ["naive", "local", "global", "hybrid"]
+
+            valid_modes = ["naive", "local", "global", "hybrid", "mix"]
             if mode not in valid_modes:
                 logger.error("QUERY_TEXT_STREAM MODE ERROR:")
                 logger.error(f"  - Invalid mode: '{mode}'")
                 logger.error(f"  - Valid modes: {valid_modes}")
                 raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
-            
+
             logger.info("  - Parameter validation passed")
             logger.info("  - Starting streaming query...")
-            
+
             try:
                 # Collect streaming results
                 chunks = []
                 chunk_count = 0
                 total_length = 0
-                
+
                 logger.info("STREAMING COLLECTION:")
                 async for chunk in lightrag_client.query_text_stream(
-                    query, mode=mode, only_need_context=only_need_context
+                    query,
+                    mode=mode,
+                    only_need_context=only_need_context,
+                    only_need_prompt=only_need_prompt,
+                    top_k=top_k,
+                    max_entity_tokens=max_entity_tokens,
+                    max_relation_tokens=max_relation_tokens,
+                    include_references=include_references,
+                    include_chunk_content=include_chunk_content,
+                    enable_rerank=enable_rerank,
+                    conversation_history=conversation_history
                 ):
                     chunks.append(chunk)
                     chunk_count += 1
                     chunk_length = len(str(chunk))
                     total_length += chunk_length
-                    
+
                     # Log every 50th chunk to avoid spam
                     if chunk_count % 50 == 0:
                         logger.info(f"  - Collected {chunk_count} chunks, total length: {total_length}")
-                
+
                 logger.info("QUERY_TEXT_STREAM SUCCESS:")
                 logger.info(f"  - Total chunks collected: {chunk_count}")
                 logger.info(f"  - Total response length: {total_length}")
                 logger.info(f"  - Average chunk size: {total_length / chunk_count if chunk_count > 0 else 0:.2f}")
-                
+
                 # Join chunks into final response
                 streaming_response = "".join(chunks)
                 result = {"streaming_response": streaming_response}
-                
+
                 logger.info(f"STREAMING RESULT:")
                 logger.info(f"  - Final response length: {len(streaming_response)}")
                 logger.info(f"  - Response preview: {streaming_response[:200]}{'...' if len(streaming_response) > 200 else ''}")
-                
+
                 # Create MCP response
                 response = CallToolResult(
                     content=[TextContent(type="text", text=json.dumps(result, indent=2))]
                 )
                 logger.info(f"  - MCP response created successfully")
                 return response
-                
+
             except Exception as e:
                 logger.error("QUERY_TEXT_STREAM FAILED:")
                 logger.error(f"  - Exception type: {type(e)}")
@@ -1544,7 +1687,6 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 logger.error(f"  - Exception args: {e.args}")
                 logger.error(f"  - Query: '{query}'")
                 logger.error(f"  - Mode: '{mode}'")
-                logger.error(f"  - Only need context: {only_need_context}")
                 logger.error(f"  - Chunks collected before error: {chunk_count}")
                 import traceback
                 logger.error(f"  - Full traceback: {traceback.format_exc()}")

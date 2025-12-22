@@ -375,23 +375,48 @@ class LightRAGClient:
     
     # Query Methods (2 methods)
     
-    async def query_text(self, query: str, mode: str = "hybrid", only_need_context: bool = False) -> QueryResponse:
+    async def query_text(
+        self,
+        query: str,
+        mode: str = "hybrid",
+        only_need_context: bool = False,
+        only_need_prompt: bool = False,
+        top_k: Optional[int] = None,
+        max_entity_tokens: Optional[int] = None,
+        max_relation_tokens: Optional[int] = None,
+        include_references: bool = False,
+        include_chunk_content: bool = False,
+        enable_rerank: bool = False,
+        conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> QueryResponse:
         """Query LightRAG with text."""
         self.logger.info(f"Querying text with mode '{mode}': {query[:100]}{'...' if len(query) > 100 else ''}")
-        
+
         # Validate query parameters
         if not query or not query.strip():
             raise LightRAGValidationError("Query cannot be empty")
-        
-        valid_modes = ["naive", "local", "global", "hybrid"]
+
+        valid_modes = ["naive", "local", "global", "hybrid", "mix"]
         if mode not in valid_modes:
             raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
-        
+
         try:
-            request_data = QueryRequest(query=query, mode=mode, only_need_context=only_need_context)
+            request_data = QueryRequest(
+                query=query,
+                mode=mode,
+                only_need_context=only_need_context,
+                only_need_prompt=only_need_prompt,
+                top_k=top_k,
+                max_entity_tokens=max_entity_tokens,
+                max_relation_tokens=max_relation_tokens,
+                include_references=include_references,
+                include_chunk_content=include_chunk_content,
+                enable_rerank=enable_rerank,
+                conversation_history=conversation_history
+            )
             response_data = await self._make_request("POST", "/query", request_data.model_dump())
             result = QueryResponse(**response_data)
-            
+
             result_count = len(result.results) if hasattr(result, 'results') and result.results else 0
             self.logger.info(f"Query completed successfully, returned {result_count} results")
             return result
@@ -401,20 +426,46 @@ class LightRAGClient:
                 raise
             raise LightRAGError(f"Query operation failed: {str(e)}")
     
-    async def query_text_stream(self, query: str, mode: str = "hybrid", only_need_context: bool = False) -> AsyncGenerator[str, None]:
+    async def query_text_stream(
+        self,
+        query: str,
+        mode: str = "hybrid",
+        only_need_context: bool = False,
+        only_need_prompt: bool = False,
+        top_k: Optional[int] = None,
+        max_entity_tokens: Optional[int] = None,
+        max_relation_tokens: Optional[int] = None,
+        include_references: bool = False,
+        include_chunk_content: bool = False,
+        enable_rerank: bool = False,
+        conversation_history: Optional[List[Dict[str, str]]] = None
+    ) -> AsyncGenerator[str, None]:
         """Stream query results from LightRAG."""
         # Validate query parameters
         if not query or not query.strip():
             raise LightRAGValidationError("Query cannot be empty")
-        
-        valid_modes = ["naive", "local", "global", "hybrid"]
+
+        valid_modes = ["naive", "local", "global", "hybrid", "mix"]
         if mode not in valid_modes:
             raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
-        
+
         self.logger.info(f"Starting streaming query with mode '{mode}': {query[:100]}{'...' if len(query) > 100 else ''}")
-        
+
         try:
-            request_data = QueryRequest(query=query, mode=mode, only_need_context=only_need_context, stream=True)
+            request_data = QueryRequest(
+                query=query,
+                mode=mode,
+                only_need_context=only_need_context,
+                only_need_prompt=only_need_prompt,
+                top_k=top_k,
+                max_entity_tokens=max_entity_tokens,
+                max_relation_tokens=max_relation_tokens,
+                include_references=include_references,
+                include_chunk_content=include_chunk_content,
+                enable_rerank=enable_rerank,
+                conversation_history=conversation_history,
+                stream=True
+            )
             async for chunk in self._stream_request("POST", "/query/stream", request_data.model_dump()):
                 yield chunk
         except Exception as e:

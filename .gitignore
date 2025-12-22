@@ -184,5 +184,6 @@ archive/
 temp_test_*.py
 debug_temp_*.py
 
-
+# Claude Code settings
+.claude/settings.local.json
 
