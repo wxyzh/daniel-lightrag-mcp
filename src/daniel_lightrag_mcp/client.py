@@ -527,13 +527,13 @@ class LightRAGClient:
         if entity_name is None:
             entity_name = entity_id
         request_data = DeleteEntityRequest(entity_id=entity_id, entity_name=entity_name)
-        response_data = await self._make_request("DELETE", "/documents/delete_entity", request_data.model_dump())
+        response_data = await self._make_request("DELETE", "/rag/delete_by_entity", request_data.model_dump())
         return DeletionResult(**response_data)
     
     async def delete_relation(self, relation_id: str, source_entity: str = "unknown", target_entity: str = "unknown") -> DeletionResult:
         """Delete a relation from the knowledge graph."""
         request_data = DeleteRelationRequest(relation_id=relation_id, source_entity=source_entity, target_entity=target_entity)
-        response_data = await self._make_request("DELETE", "/documents/delete_relation", request_data.model_dump())
+        response_data = await self._make_request("DELETE", "/rag/delete_by_relation", request_data.model_dump())
         return DeletionResult(**response_data)
     
     # System Management Methods (4 methods)
