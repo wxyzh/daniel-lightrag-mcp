@@ -1881,7 +1881,68 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 import traceback
                 logger.error(f"  - Full traceback: {traceback.format_exc()}")
                 raise
-        
+
+        elif tool_name == "create_entity":
+            logger.info("EXECUTING CREATE_ENTITY TOOL:")
+            logger.info(f"  - Tool: {tool_name}")
+            logger.info(f"  - Client type: {type(lightrag_client)}")
+            logger.info(f"  - Client base_url: {lightrag_client.base_url}")
+            logger.info(f"  - Raw arguments: {arguments}")
+
+            entity_name = arguments.get("entity_name", "")
+            properties = arguments.get("properties", {})
+            logger.info(f"CREATE_ENTITY PARAMETERS:")
+            logger.info(f"  - entity_name: '{entity_name}'")
+            logger.info(f"  - entity_name type: {type(entity_name)}")
+            logger.info(f"  - properties: {properties}")
+            logger.info(f"  - properties type: {type(properties)}")
+            logger.info(f"  - properties keys: {list(properties.keys()) if isinstance(properties, dict) else 'N/A'}")
+
+            if not entity_name or not entity_name.strip():
+                logger.error("CREATE_ENTITY VALIDATION ERROR:")
+                logger.error("  - Entity name is empty or whitespace only")
+                raise LightRAGValidationError("Entity name cannot be empty")
+
+            if not isinstance(properties, dict):
+                logger.error("CREATE_ENTITY VALIDATION ERROR:")
+                logger.error(f"  - Properties must be a dictionary, got {type(properties)}")
+                raise LightRAGValidationError("Properties must be a dictionary")
+
+            if not properties:
+                logger.warning("CREATE_ENTITY WARNING:")
+                logger.warning("  - Properties dictionary is empty, creating entity with no properties")
+
+            logger.info("  - Parameter validation passed")
+            logger.info("  - Calling lightrag_client.create_entity()...")
+
+            try:
+                result = await lightrag_client.create_entity(entity_name, properties)
+                logger.info("CREATE_ENTITY SUCCESS:")
+                logger.info(f"  - Result type: {type(result)}")
+                logger.info(f"  - Result content: {repr(result)}")
+                if hasattr(result, 'model_dump'):
+                    try:
+                        result_dump = result.model_dump()
+                        logger.info(f"  - Result.model_dump(): {result_dump}")
+                        logger.info(f"ENTITY CREATED:")
+                        logger.info(f"    - Entity name: '{entity_name}'")
+                        logger.info(f"    - Properties: {properties}")
+                    except Exception as e:
+                        logger.error(f"  - model_dump() failed: {e}")
+
+                response = _create_success_response(result, tool_name)
+                logger.info(f"  - Success response created")
+                return response
+            except Exception as e:
+                logger.error("CREATE_ENTITY FAILED:")
+                logger.error(f"  - Exception type: {type(e)}")
+                logger.error(f"  - Exception message: {str(e)}")
+                logger.error(f"  - Entity name: {entity_name}")
+                logger.error(f"  - Properties: {properties}")
+                import traceback
+                logger.error(f"  - Full traceback: {traceback.format_exc()}")
+                raise
+
         elif tool_name == "update_entity":
             logger.info("EXECUTING UPDATE_ENTITY TOOL:")
             logger.info(f"  - Tool: {tool_name}")
@@ -2053,6 +2114,76 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 return response
             except Exception as e:
                 logger.error(f"UPDATE_RELATION FAILED: {e}")
+                raise
+
+        elif tool_name == "create_relation":
+            logger.info("EXECUTING CREATE_RELATION TOOL:")
+            logger.info(f"  - Tool: {tool_name}")
+            logger.info(f"  - Client type: {type(lightrag_client)}")
+            logger.info(f"  - Client base_url: {lightrag_client.base_url}")
+            logger.info(f"  - Raw arguments: {arguments}")
+
+            source_entity = arguments.get("source_entity", "")
+            target_entity = arguments.get("target_entity", "")
+            properties = arguments.get("properties", {})
+
+            logger.info(f"CREATE_RELATION PARAMETERS:")
+            logger.info(f"  - source_entity: '{source_entity}'")
+            logger.info(f"  - target_entity: '{target_entity}'")
+            logger.info(f"  - properties: {properties}")
+            logger.info(f"  - properties type: {type(properties)}")
+            logger.info(f"  - properties keys: {list(properties.keys()) if isinstance(properties, dict) else 'N/A'}")
+
+            if not source_entity or not source_entity.strip():
+                logger.error("CREATE_RELATION VALIDATION ERROR:")
+                logger.error("  - Source entity is empty or whitespace only")
+                raise LightRAGValidationError("Source entity cannot be empty")
+
+            if not target_entity or not target_entity.strip():
+                logger.error("CREATE_RELATION VALIDATION ERROR:")
+                logger.error("  - Target entity is empty or whitespace only")
+                raise LightRAGValidationError("Target entity cannot be empty")
+
+            if not isinstance(properties, dict):
+                logger.error("CREATE_RELATION VALIDATION ERROR:")
+                logger.error(f"  - Properties must be a dictionary, got {type(properties)}")
+                raise LightRAGValidationError("Properties must be a dictionary")
+
+            if not properties:
+                logger.warning("CREATE_RELATION WARNING:")
+                logger.warning("  - Properties dictionary is empty, creating relation with no properties")
+
+            logger.info("  - Parameter validation passed")
+            logger.info("  - Calling lightrag_client.create_relation()...")
+
+            try:
+                result = await lightrag_client.create_relation(source_entity, target_entity, properties)
+                logger.info("CREATE_RELATION SUCCESS:")
+                logger.info(f"  - Result type: {type(result)}")
+                logger.info(f"  - Result content: {repr(result)}")
+                if hasattr(result, 'model_dump'):
+                    try:
+                        result_dump = result.model_dump()
+                        logger.info(f"  - Result.model_dump(): {result_dump}")
+                        logger.info(f"RELATION CREATED:")
+                        logger.info(f"    - Source entity: '{source_entity}'")
+                        logger.info(f"    - Target entity: '{target_entity}'")
+                        logger.info(f"    - Properties: {properties}")
+                    except Exception as e:
+                        logger.error(f"  - model_dump() failed: {e}")
+
+                response = _create_success_response(result, tool_name)
+                logger.info(f"  - Success response created")
+                return response
+            except Exception as e:
+                logger.error("CREATE_RELATION FAILED:")
+                logger.error(f"  - Exception type: {type(e)}")
+                logger.error(f"  - Exception message: {str(e)}")
+                logger.error(f"  - Source entity: {source_entity}")
+                logger.error(f"  - Target entity: {target_entity}")
+                logger.error(f"  - Properties: {properties}")
+                import traceback
+                logger.error(f"  - Full traceback: {traceback.format_exc()}")
                 raise
 
         elif tool_name == "delete_entity":
