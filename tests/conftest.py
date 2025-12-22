@@ -4,7 +4,7 @@ Pytest configuration and fixtures for daniel-lightrag-mcp tests.
 
 import pytest
 import asyncio
-from typing import Dict, Any, AsyncGenerator
+from typing import Dict, Any
 from unittest.mock import AsyncMock, MagicMock
 import httpx
 
@@ -44,7 +44,7 @@ def mock_response():
         response.json.return_value = json_data or {}
         response.text = text
         response.raise_for_status = MagicMock()
-        
+
         if status_code >= 400:
             error = httpx.HTTPStatusError(
                 message=f"HTTP {status_code}",
@@ -52,9 +52,9 @@ def mock_response():
                 response=response
             )
             response.raise_for_status.side_effect = error
-        
+
         return response
-    
+
     return _create_response
 
 
@@ -65,12 +65,12 @@ def mock_streaming_response():
         async def aiter_text():
             for chunk in chunks:
                 yield chunk
-        
+
         response = MagicMock()
         response.status_code = status_code
         response.aiter_text = aiter_text
         response.raise_for_status = MagicMock()
-        
+
         if status_code >= 400:
             error = httpx.HTTPStatusError(
                 message=f"HTTP {status_code}",
@@ -78,9 +78,9 @@ def mock_streaming_response():
                 response=response
             )
             response.raise_for_status.side_effect = error
-        
+
         return response
-    
+
     return _create_streaming_response
 
 
@@ -99,53 +99,133 @@ def sample_text_document():
 def sample_insert_response():
     """Sample insert response for testing."""
     return {
-        "id": "doc_123",
         "status": "success",
-        "message": "Document inserted successfully"
+        "message": "Document inserted successfully",
+        "track_id": "track_123"
     }
 
 
 @pytest.fixture
 def sample_query_response():
-    """Sample query response for testing."""
+    """Sample query response for testing (new format with references)."""
     return {
-        "query": "test query",
-        "results": [
+        "response": "This is the AI-generated answer to the query.",
+        "references": [
             {
-                "document_id": "doc_123",
-                "snippet": "This is a test snippet",
-                "score": 0.95,
-                "metadata": {"relevance": "high"}
+                "reference_id": "1",
+                "file_path": "/documents/ai_overview.pdf"
+            },
+            {
+                "reference_id": "2",
+                "file_path": "/documents/ml_basics.txt"
             }
-        ],
-        "total_results": 1,
-        "processing_time": 0.123,
-        "context": "Test context information"
+        ]
     }
 
 
 @pytest.fixture
-def sample_documents_response():
-    """Sample documents response for testing."""
+def sample_query_data_response():
+    """Sample query_data response for testing."""
+    return {
+        "status": "success",
+        "message": "Query executed successfully",
+        "data": {
+            "entities": [
+                {
+                    "entity_name": "Neural Networks",
+                    "entity_type": "CONCEPT",
+                    "description": "Computational models inspired by biological neural networks",
+                    "source_id": "chunk-123",
+                    "file_path": "/documents/ai_basics.pdf",
+                    "reference_id": "1"
+                }
+            ],
+            "relationships": [
+                {
+                    "src_id": "Neural Networks",
+                    "tgt_id": "Machine Learning",
+                    "description": "Neural networks are a subset of machine learning",
+                    "keywords": "subset, algorithm, learning",
+                    "weight": 0.85,
+                    "source_id": "chunk-123",
+                    "file_path": "/documents/ai_basics.pdf",
+                    "reference_id": "1"
+                }
+            ],
+            "chunks": [
+                {
+                    "content": "Neural networks are computational models that mimic...",
+                    "file_path": "/documents/ai_basics.pdf",
+                    "chunk_id": "chunk-123",
+                    "reference_id": "1"
+                }
+            ],
+            "references": [
+                {
+                    "reference_id": "1",
+                    "file_path": "/documents/ai_basics.pdf"
+                }
+            ]
+        },
+        "metadata": {
+            "query_mode": "local",
+            "keywords": {
+                "high_level": ["neural", "networks"],
+                "low_level": ["computation", "model"]
+            },
+            "processing_info": {
+                "total_entities_found": 5,
+                "total_relations_found": 3,
+                "entities_after_truncation": 1,
+                "relations_after_truncation": 1,
+                "final_chunks_count": 1
+            }
+        }
+    }
+
+
+@pytest.fixture
+def sample_paginated_documents_response():
+    """Sample paginated documents response for testing."""
     return {
         "documents": [
             {
                 "id": "doc_123",
-                "title": "Test Document",
-                "status": "processed",
-                "created_at": "2024-01-01T00:00:00Z",
-                "metadata": {"author": "test"}
+                "content_summary": "Research paper on machine learning",
+                "content_length": 15240,
+                "status": "PROCESSED",
+                "created_at": "2025-03-31T12:34:56",
+                "updated_at": "2025-03-31T12:35:30",
+                "track_id": "upload_20250729_170612_abc123",
+                "chunks_count": 12,
+                "error_msg": None,
+                "metadata": {"author": "John Doe", "year": 2025},
+                "file_path": "research_paper.pdf"
             }
         ],
-        "total": 1
+        "pagination": {
+            "page": 1,
+            "page_size": 50,
+            "total_count": 150,
+            "total_pages": 3,
+            "has_next": True,
+            "has_prev": False
+        },
+        "status_counts": {
+            "FAILED": 5,
+            "PENDING": 10,
+            "PREPROCESSED": 5,
+            "PROCESSED": 130,
+            "PROCESSING": 5
+        }
     }
 
 
 @pytest.fixture
 def sample_graph_response():
-    """Sample knowledge graph response for testing."""
+    """Sample knowledge graph response for testing (API returns nodes/edges)."""
     return {
-        "entities": [
+        "nodes": [
             {
                 "id": "entity_123",
                 "name": "Test Entity",
@@ -154,11 +234,11 @@ def sample_graph_response():
                 "created_at": "2024-01-01T00:00:00Z"
             }
         ],
-        "relations": [
+        "edges": [
             {
                 "id": "rel_123",
-                "source_entity": "entity_123",
-                "target_entity": "entity_456",
+                "source": "entity_123",
+                "target": "entity_456",
                 "type": "related_to",
                 "properties": {"strength": "high"},
                 "weight": 0.8
@@ -167,6 +247,27 @@ def sample_graph_response():
         "total_entities": 1,
         "total_relations": 1
     }
+
+
+@pytest.fixture
+def sample_graph_labels_response():
+    """Sample graph labels response for testing."""
+    return {
+        "entity_labels": ["Person", "Organization", "Location", "Concept"],
+        "relation_labels": ["works_for", "located_in", "related_to", "part_of"]
+    }
+
+
+@pytest.fixture
+def sample_popular_labels_response():
+    """Sample popular labels response for testing."""
+    return ["人工智能", "机器学习", "神经网络", "深度学习", "自然语言处理"]
+
+
+@pytest.fixture
+def sample_search_labels_response():
+    """Sample search labels response for testing."""
+    return ["人工智能", "AIGC", "AI应用"]
 
 
 @pytest.fixture
