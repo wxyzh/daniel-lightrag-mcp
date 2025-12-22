@@ -210,7 +210,6 @@ class UploadResponse(BaseModel):
 class DocumentInfo(BaseModel):
     """Document information model."""
     id: str = Field(..., description="Document ID")
-    content_summary: Optional[str] = Field(None, description="Summary of document content")
     content_length: Optional[int] = Field(None, description="Length of document content in characters")
     status: DocStatus = Field(..., description="Document status")
     created_at: Optional[str] = None
