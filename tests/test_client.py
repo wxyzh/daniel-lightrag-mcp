@@ -125,16 +125,16 @@ class TestDocumentManagementMethods:
         assert isinstance(result, InsertResponse)
         assert result.id == "doc_123"
         assert result.status == "success"
-        
+
         # Verify API call
         lightrag_client.client.post.assert_called_once()
         call_args = lightrag_client.client.post.call_args
         assert call_args[0][0] == "http://localhost:9621/documents/text"
-        
+
         # Verify request data
         request_data = call_args[1]["json"]
-        assert request_data["content"] == "test content"
-        assert request_data["title"] == "Test Title"
+        assert request_data["text"] == "test content"
+        assert request_data["file_source"] == "Test Title"
     
     async def test_insert_text_empty_content(self, lightrag_client, mock_response, sample_insert_response):
         """Test text insertion with empty content (should be allowed)."""
