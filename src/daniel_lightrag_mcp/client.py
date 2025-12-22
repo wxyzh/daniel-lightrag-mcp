@@ -412,7 +412,9 @@ class LightRAGClient:
                 include_references=include_references,
                 include_chunk_content=include_chunk_content,
                 enable_rerank=enable_rerank,
-                conversation_history=conversation_history,
+                conversation_history=conversation_history or [],
+                hl_keywords=[],  # query_text doesn't use keywords
+                ll_keywords=[],  # query_text doesn't use keywords
                 stream=False
             )
             response_data = await self._make_request("POST", "/query", request_data.model_dump())
@@ -464,7 +466,9 @@ class LightRAGClient:
                 include_references=include_references,
                 include_chunk_content=include_chunk_content,
                 enable_rerank=enable_rerank,
-                conversation_history=conversation_history,
+                conversation_history=conversation_history or [],
+                hl_keywords=[],  # query_text_stream doesn't use keywords
+                ll_keywords=[],  # query_text_stream doesn't use keywords
                 stream=True
             )
             async for chunk in self._stream_request("POST", "/query/stream", request_data.model_dump()):
@@ -484,8 +488,8 @@ class LightRAGClient:
         max_entity_tokens: Optional[int] = None,
         max_relation_tokens: Optional[int] = None,
         max_total_tokens: Optional[int] = None,
-        hl_keywords: Optional[List[str]] = None,
-        ll_keywords: Optional[List[str]] = None,
+        hl_keywords: Optional[List[str]] = None,  # None will be converted to [] by model
+        ll_keywords: Optional[List[str]] = None,  # None will be converted to [] by model
         enable_rerank: bool = True,
         conversation_history: Optional[List[Dict[str, str]]] = None
     ) -> QueryDataResponse:
@@ -525,6 +529,7 @@ class LightRAGClient:
             raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
 
         try:
+            # Convert None to empty lists to avoid validation errors
             request_data = QueryRequest(
                 query=query,
                 mode=mode,
@@ -533,10 +538,10 @@ class LightRAGClient:
                 max_entity_tokens=max_entity_tokens,
                 max_relation_tokens=max_relation_tokens,
                 max_total_tokens=max_total_tokens,
-                hl_keywords=hl_keywords,
-                ll_keywords=ll_keywords,
+                hl_keywords=hl_keywords or [],
+                ll_keywords=ll_keywords or [],
                 enable_rerank=enable_rerank,
-                conversation_history=conversation_history,
+                conversation_history=conversation_history or [],
                 include_references=True,  # query_data always includes references
                 stream=False
             )
