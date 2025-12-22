@@ -18,6 +18,7 @@ A comprehensive MCP (Model Context Protocol) server that provides **100% functio
 - **Query Operations**: 2 tools for text queries with regular and streaming responses
 - **Knowledge Graph**: 6 tools for accessing, checking, updating, and managing entities and relations
 - **System Management**: 4 tools for health checks, status monitoring, and cache management
+- **Multiple Instance Support**: Run multiple MCP servers with tool prefixes (NEW! 🎉)
 - **Comprehensive Error Handling**: Robust error handling with detailed error messages
 - **Full API Coverage**: Complete integration with LightRAG API 0.1.96+
 
@@ -72,9 +73,35 @@ export LIGHTRAG_BASE_URL="http://localhost:9621"
 export LIGHTRAG_API_KEY="your-api-key"  # Optional
 export LIGHTRAG_TIMEOUT="30"            # Optional
 export LOG_LEVEL="INFO"                 # Optional
+export LIGHTRAG_TOOL_PREFIX="prefix_"   # Optional, for running multiple instances
 
 daniel-lightrag-mcp
 ```
+
+### Running Multiple Instances
+
+You can run multiple MCP server instances simultaneously (e.g., for different data sources) by using the `LIGHTRAG_TOOL_PREFIX` environment variable. This adds a prefix to all tool names and descriptions, making it easy to distinguish between instances.
+
+**Example: Running two instances for novel writing**
+
+```bash
+# Terminal 1: Style reference instance
+export LIGHTRAG_BASE_URL="http://localhost:9621"
+export LIGHTRAG_TOOL_PREFIX="novel_style_"
+python -m daniel_lightrag_mcp
+
+# Terminal 2: Content instance
+export LIGHTRAG_BASE_URL="http://localhost:9622"
+export LIGHTRAG_TOOL_PREFIX="novel_content_"
+python -m daniel_lightrag_mcp
+```
+
+**Result:**
+- Instance 1 tools: `novel_style_query_text`, `novel_style_insert_text`, etc.
+- Instance 2 tools: `novel_content_query_text`, `novel_content_insert_text`, etc.
+- Descriptions show prefix: `[novel_style] Query LightRAG with text`
+
+This prevents confusion when using multiple LightRAG databases in the same MCP client.
 
 ## Configuration
 

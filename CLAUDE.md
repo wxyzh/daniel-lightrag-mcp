@@ -161,6 +161,35 @@ python -m daniel_lightrag_mcp
 - `LIGHTRAG_API_KEY`: API 密钥（可选）
 - `LIGHTRAG_TIMEOUT`: 请求超时时间（默认: 30 秒）
 - `LOG_LEVEL`: 日志级别（默认: INFO）
+- `LIGHTRAG_TOOL_PREFIX`: 工具名称前缀（可选，用于运行多个 MCP 实例）
+
+### 多实例部署（工具前缀）
+
+如果你需要同时运行多个 LightRAG MCP 服务器实例（例如，一个用于小说风格查询，另一个用于正文查询），可以使用 `LIGHTRAG_TOOL_PREFIX` 环境变量来区分不同实例的工具。
+
+**使用示例：**
+
+```bash
+# 实例1：小说风格查询
+export LIGHTRAG_BASE_URL="http://localhost:9621"
+export LIGHTRAG_TOOL_PREFIX="novel_style_"
+python -m daniel_lightrag_mcp
+
+# 实例2：小说正文查询
+export LIGHTRAG_BASE_URL="http://localhost:9622"
+export LIGHTRAG_TOOL_PREFIX="novel_content_"
+python -m daniel_lightrag_mcp
+```
+
+**效果：**
+- 工具名称会自动添加前缀：
+  - 实例1: `novel_style_query_text`, `novel_style_insert_text`, ...
+  - 实例2: `novel_content_query_text`, `novel_content_insert_text`, ...
+- 工具描述会显示前缀标记：
+  - `[novel_style] Query LightRAG with text`
+  - `[novel_content] Query LightRAG with text`
+
+这样你就可以在同一个 MCP 客户端中区分不同数据源的工具，避免混淆。
 
 ## 与 LightRAG 服务器的交互
 
