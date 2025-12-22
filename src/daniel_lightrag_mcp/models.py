@@ -12,9 +12,9 @@ class DocStatus(str, Enum):
     """Document status enumeration."""
     PENDING = "pending"
     PROCESSING = "processing"
+    PREPROCESSED = "preprocessed"
     PROCESSED = "processed"
     FAILED = "failed"
-    DELETED = "deleted"
 
 
 class QueryMode(str, Enum):
@@ -24,6 +24,7 @@ class QueryMode(str, Enum):
     GLOBAL = "global"
     HYBRID = "hybrid"
     MIX = "mix"
+    BYPASS = "bypass"
 
 
 class PipelineStatus(str, Enum):
@@ -86,13 +87,11 @@ class DeleteDocRequest(BaseModel):
 
 class DeleteEntityRequest(BaseModel):
     """Request model for deleting an entity."""
-    entity_id: str = Field(..., description="ID of the entity to delete")
     entity_name: str = Field(..., description="Name of the entity to delete")
 
 
 class DeleteRelationRequest(BaseModel):
     """Request model for deleting a relation."""
-    relation_id: str = Field(..., description="ID of the relation to delete")
     source_entity: str = Field(..., description="Source entity name")
     target_entity: str = Field(..., description="Target entity name")
 
@@ -112,32 +111,43 @@ class ClearCacheRequest(BaseModel):
 # Query Request Models
 class QueryRequest(BaseModel):
     """Request model for text queries."""
-    query: str = Field(..., description="Query text")
-    mode: QueryMode = Field(QueryMode.HYBRID, description="Query mode")
-    only_need_context: bool = Field(False, description="Whether to only return context")
+    query: str = Field(..., min_length=3, description="Query text")
+    mode: QueryMode = Field(QueryMode.MIX, description="Query mode")
+    only_need_context: bool = Field(False, description="Whether to only return context without generation")
     only_need_prompt: bool = Field(False, description="Whether to only return the prompt")
-    stream: bool = Field(False, description="Whether to stream results")
+    stream: bool = Field(True, description="Whether to stream results")
 
     # Advanced retrieval parameters
-    top_k: Optional[int] = Field(None, description="Number of top results to retrieve")
-    max_entity_tokens: Optional[int] = Field(None, description="Maximum entity tokens for local mode")
-    max_relation_tokens: Optional[int] = Field(None, description="Maximum relation tokens for global mode")
+    top_k: Optional[int] = Field(None, ge=1, description="Number of top results to retrieve")
+    chunk_top_k: Optional[int] = Field(None, ge=1, description="Number of text chunks to retrieve")
+    max_entity_tokens: Optional[int] = Field(None, ge=1, description="Maximum entity tokens for local mode")
+    max_relation_tokens: Optional[int] = Field(None, ge=1, description="Maximum relation tokens for global mode")
+    max_total_tokens: Optional[int] = Field(None, ge=1, description="Maximum total tokens budget")
 
     # Reference and reranking parameters
-    include_references: bool = Field(False, description="Whether to include references in response")
+    include_references: bool = Field(True, description="Whether to include references in response")
     include_chunk_content: bool = Field(False, description="Whether to include chunk content in references")
-    enable_rerank: bool = Field(False, description="Whether to enable reranking")
+    enable_rerank: bool = Field(True, description="Whether to enable reranking")
+
+    # Keywords parameters
+    hl_keywords: Optional[List[str]] = Field(None, description="High-level keywords for retrieval")
+    ll_keywords: Optional[List[str]] = Field(None, description="Low-level keywords for retrieval")
 
     # Conversation history
     conversation_history: Optional[List[Dict[str, str]]] = Field(None, description="Conversation history for multi-turn queries")
+
+    # Response control
+    response_type: Optional[str] = Field(None, description="Response format (e.g., 'Multiple Paragraphs', 'Single Paragraph')")
+    user_prompt: Optional[str] = Field(None, description="User-provided prompt for the query")
 
 
 # Knowledge Graph Request Models
 class EntityUpdateRequest(BaseModel):
     """Request model for updating an entity."""
-    entity_id: str = Field(..., description="ID of the entity to update")
     entity_name: str = Field(..., description="Name of the entity to update")
     updated_data: Dict[str, Any] = Field(..., description="Updated data for the entity")
+    allow_rename: bool = Field(False, description="Whether to allow entity renaming")
+    allow_merge: bool = Field(False, description="Whether to merge into existing entity when renaming")
 
 
 class RelationUpdateRequest(BaseModel):
@@ -156,14 +166,14 @@ class EntityExistsRequest(BaseModel):
 class CreateEntityRequest(BaseModel):
     """Request model for creating a new entity."""
     entity_name: str = Field(..., description="Name of the new entity")
-    properties: Dict[str, Any] = Field(..., description="Properties of the entity (e.g., description, entity_type)")
+    entity_data: Dict[str, Any] = Field(..., description="Entity properties (e.g., description, entity_type)")
 
 
 class CreateRelationRequest(BaseModel):
     """Request model for creating a new relation."""
     source_entity: str = Field(..., description="Source entity name")
     target_entity: str = Field(..., description="Target entity name")
-    properties: Dict[str, Any] = Field(..., description="Properties of the relation (e.g., description, keywords, weight)")
+    relation_data: Dict[str, Any] = Field(..., description="Relation properties (e.g., description, keywords, weight)")
 
 
 # Authentication Request Models
@@ -200,10 +210,14 @@ class UploadResponse(BaseModel):
 class DocumentInfo(BaseModel):
     """Document information model."""
     id: str = Field(..., description="Document ID")
-    title: Optional[str] = None
+    content_summary: Optional[str] = Field(None, description="Summary of document content")
+    content_length: Optional[int] = Field(None, description="Length of document content in characters")
     status: DocStatus = Field(..., description="Document status")
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    track_id: Optional[str] = Field(None, description="Tracking ID for monitoring progress")
+    chunks_count: Optional[int] = Field(None, description="Number of chunks the document was split into")
+    error_msg: Optional[str] = Field(None, description="Error message if processing failed")
     metadata: Optional[Dict[str, Any]] = None
     file_path: Optional[str] = Field(None, description="Original file path")
 
@@ -273,29 +287,88 @@ class ClearCacheResponse(BaseModel):
 
 class DeletionResult(BaseModel):
     """Response model for entity/relation deletion."""
-    deleted: bool = Field(..., description="Whether deletion was successful")
-    id: str = Field(..., description="ID of the deleted item")
-    type: str = Field(..., description="Type of deleted item (entity/relation)")
-    message: Optional[str] = None
+    status: str = Field(..., description="Deletion status (success/not_found/fail)")
+    doc_id: str = Field(..., description="Document/entity ID")
+    message: str = Field(..., description="Status message")
+    status_code: int = Field(default=200, description="Status code")
+    file_path: Optional[str] = Field(None, description="File path if applicable")
 
 
 # Query Response Models
 class QueryResult(BaseModel):
-    """Query result model."""
+    """Query result model for displaying retrieved content."""
     document_id: str = Field(..., description="Document ID")
-    snippet: str = Field(..., description="Text snippet")
-    score: Optional[float] = Field(None, ge=0, le=1)
-    metadata: Optional[Dict[str, Any]] = None
+    snippet: str = Field(..., description="Text snippet from the document")
+    score: Optional[float] = Field(None, ge=0, le=1, description="Relevance score")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+
+
+class ReferenceItem(BaseModel):
+    """Reference item for query responses."""
+    reference_id: str = Field(..., description="Unique reference identifier")
+    file_path: str = Field(..., description="Path to the source file")
+    content: Optional[List[str]] = Field(None, description="List of chunk contents (only when include_chunk_content=True)")
 
 
 class QueryResponse(BaseModel):
     """Response model for text queries."""
-    response: Optional[str] = Field(None, description="Query response text")
-    query: Optional[str] = None
-    results: Optional[List[QueryResult]] = None
-    total_results: Optional[int] = None
-    processing_time: Optional[float] = None
-    context: Optional[str] = None
+    response: Optional[str] = Field(None, description="Query response text generated by LLM")
+    results: Optional[List[QueryResult]] = Field(None, description="Retrieved content for display")
+    references: Optional[List[ReferenceItem]] = Field(None, description="Reference list for citation (only when include_references=True)")
+
+
+# Query Data Models (for /query/data endpoint)
+class QueryDataEntity(BaseModel):
+    """Entity retrieved from knowledge graph."""
+    entity_name: str = Field(..., description="Name of the entity")
+    entity_type: Optional[str] = Field(None, description="Type/category of the entity")
+    description: Optional[str] = Field(None, description="Entity description")
+    source_id: Optional[str] = Field(None, description="Source chunk ID")
+    file_path: Optional[str] = Field(None, description="Path to the source file")
+    reference_id: Optional[str] = Field(None, description="Reference identifier")
+
+
+class QueryDataRelation(BaseModel):
+    """Relationship retrieved from knowledge graph."""
+    src_id: str = Field(..., description="Source entity name")
+    tgt_id: str = Field(..., description="Target entity name")
+    description: Optional[str] = Field(None, description="Relationship description")
+    keywords: Optional[str] = Field(None, description="Comma-separated keywords")
+    weight: Optional[float] = Field(None, ge=0, le=1, description="Relationship weight")
+    source_id: Optional[str] = Field(None, description="Source chunk ID")
+    file_path: Optional[str] = Field(None, description="Path to the source file")
+    reference_id: Optional[str] = Field(None, description="Reference identifier")
+
+
+class QueryDataChunk(BaseModel):
+    """Text chunk retrieved from vector database."""
+    content: str = Field(..., description="Chunk text content")
+    file_path: Optional[str] = Field(None, description="Path to the source file")
+    chunk_id: Optional[str] = Field(None, description="Chunk identifier")
+    reference_id: Optional[str] = Field(None, description="Reference identifier")
+
+
+class QueryData(BaseModel):
+    """Structured data retrieved by query_data endpoint."""
+    entities: List[QueryDataEntity] = Field(default_factory=list, description="Retrieved entities")
+    relationships: List[QueryDataRelation] = Field(default_factory=list, description="Retrieved relationships")
+    chunks: List[QueryDataChunk] = Field(default_factory=list, description="Retrieved text chunks")
+    references: List[ReferenceItem] = Field(default_factory=list, description="Reference list")
+
+
+class QueryDataMetadata(BaseModel):
+    """Metadata for query_data response."""
+    query_mode: str = Field(..., description="Query mode used")
+    keywords: Dict[str, List[str]] = Field(default_factory=dict, description="High-level and low-level keywords")
+    processing_info: Dict[str, int] = Field(default_factory=dict, description="Processing statistics")
+
+
+class QueryDataResponse(BaseModel):
+    """Response model for query_data endpoint."""
+    status: str = Field(..., description="Query execution status (success/failure)")
+    message: str = Field(..., description="Status message")
+    data: QueryData = Field(..., description="Retrieved structured data")
+    metadata: QueryDataMetadata = Field(..., description="Query metadata")
 
 
 # Knowledge Graph Response Models
@@ -451,3 +524,39 @@ class DocsStatusesResponse(BaseModel):
     """Response model for multiple document statuses."""
     statuses: List[DocStatusResponse] = Field(default_factory=list)
     total: int = Field(0, ge=0)
+
+
+# Additional missing models for API alignment
+class ReprocessResponse(BaseModel):
+    """Response model for reprocessing failed documents."""
+    status: str = Field(default="reprocessing_started", description="Status of the reprocessing operation")
+    message: str = Field(..., description="Human-readable message describing the operation")
+    track_id: str = Field(..., description="Tracking ID for monitoring reprocessing progress")
+
+
+class CancelPipelineResponse(BaseModel):
+    """Response model for pipeline cancellation."""
+    status: str = Field(..., description="Status of the cancellation request (cancellation_requested/not_busy)")
+    message: str = Field(..., description="Human-readable message describing the operation")
+
+
+class EntityMergeRequest(BaseModel):
+    """Request model for merging entities."""
+    entities_to_change: List[str] = Field(..., description="List of entity names to be merged and deleted")
+    entity_to_change_into: str = Field(..., description="Target entity name that will receive all relationships")
+
+
+class ClearDocumentsResponse(BaseModel):
+    """Response model for clearing all documents."""
+    status: str = Field(..., description="Clearing status (success/partial_success/busy/fail)")
+    message: str = Field(..., description="Message describing the operation result")
+
+
+class SearchLabelsResponse(BaseModel):
+    """Response model for searching graph labels."""
+    labels: List[str] = Field(default_factory=list, description="List of matching labels sorted by relevance")
+
+
+class PopularLabelsResponse(BaseModel):
+    """Response model for getting popular labels."""
+    labels: List[str] = Field(default_factory=list, description="List of popular labels sorted by degree")
