@@ -14,6 +14,7 @@ from daniel_lightrag_mcp.models import (
     # Request models
     InsertTextRequest, InsertTextsRequest, QueryRequest, EntityUpdateRequest,
     RelationUpdateRequest, DeleteDocRequest, DocumentsRequest, ClearCacheRequest,
+    CreateEntityRequest, CreateRelationRequest,
     # Response models
     InsertResponse, ScanResponse, UploadResponse, DocumentsResponse, PaginatedDocsResponse,
     DeleteDocByIdResponse, ClearDocumentsResponse, QueryResponse, QueryResult,
@@ -41,6 +42,7 @@ class TestEnums:
         assert QueryMode.LOCAL == "local"
         assert QueryMode.GLOBAL == "global"
         assert QueryMode.HYBRID == "hybrid"
+        assert QueryMode.MIX == "mix"
     
     def test_pipeline_status_enum(self):
         """Test PipelineStatus enum values."""
@@ -188,11 +190,135 @@ class TestRequestModels:
     def test_query_request_defaults(self):
         """Test QueryRequest with default values."""
         request = QueryRequest(query="test query")
-        
+
         assert request.query == "test query"
         assert request.mode == QueryMode.HYBRID
         assert request.only_need_context is False
+        assert request.only_need_prompt is False
         assert request.stream is False
+        assert request.top_k is None
+        assert request.max_entity_tokens is None
+        assert request.max_relation_tokens is None
+        assert request.include_references is False
+        assert request.include_chunk_content is False
+        assert request.enable_rerank is False
+        assert request.conversation_history is None
+
+    def test_query_request_with_advanced_parameters(self):
+        """Test QueryRequest with advanced parameters."""
+        conversation_history = [
+            {"role": "user", "content": "What is LightRAG?"},
+            {"role": "assistant", "content": "LightRAG is a RAG system."}
+        ]
+        request = QueryRequest(
+            query="Tell me more",
+            mode=QueryMode.MIX,
+            only_need_context=False,
+            only_need_prompt=False,
+            stream=False,
+            top_k=20,
+            max_entity_tokens=6000,
+            max_relation_tokens=8000,
+            include_references=True,
+            include_chunk_content=True,
+            enable_rerank=True,
+            conversation_history=conversation_history
+        )
+
+        assert request.query == "Tell me more"
+        assert request.mode == QueryMode.MIX
+        assert request.top_k == 20
+        assert request.max_entity_tokens == 6000
+        assert request.max_relation_tokens == 8000
+        assert request.include_references is True
+        assert request.include_chunk_content is True
+        assert request.enable_rerank is True
+        assert request.conversation_history == conversation_history
+        assert len(request.conversation_history) == 2
+
+    def test_create_entity_request_valid(self):
+        """Test valid CreateEntityRequest creation."""
+        properties = {
+            "description": "A test entity for knowledge graph",
+            "entity_type": "concept"
+        }
+        request = CreateEntityRequest(
+            entity_name="TestEntity",
+            properties=properties
+        )
+
+        assert request.entity_name == "TestEntity"
+        assert request.properties == properties
+        assert request.properties["description"] == "A test entity for knowledge graph"
+        assert request.properties["entity_type"] == "concept"
+
+    def test_create_entity_request_missing_fields(self):
+        """Test CreateEntityRequest validation error for missing fields."""
+        # Missing entity_name
+        with pytest.raises(ValidationError) as exc_info:
+            CreateEntityRequest(properties={"description": "test"})
+
+        errors = exc_info.value.errors()
+        assert any(error["loc"] == ("entity_name",) for error in errors)
+
+        # Missing properties
+        with pytest.raises(ValidationError) as exc_info:
+            CreateEntityRequest(entity_name="TestEntity")
+
+        errors = exc_info.value.errors()
+        assert any(error["loc"] == ("properties",) for error in errors)
+
+    def test_create_relation_request_valid(self):
+        """Test valid CreateRelationRequest creation."""
+        properties = {
+            "description": "TestEntity1 is related to TestEntity2",
+            "keywords": "related connects association",
+            "weight": 2.5
+        }
+        request = CreateRelationRequest(
+            source_entity="TestEntity1",
+            target_entity="TestEntity2",
+            properties=properties
+        )
+
+        assert request.source_entity == "TestEntity1"
+        assert request.target_entity == "TestEntity2"
+        assert request.properties == properties
+        assert request.properties["weight"] == 2.5
+
+    def test_create_relation_request_missing_fields(self):
+        """Test CreateRelationRequest validation error for missing fields."""
+        properties = {"description": "test relation"}
+
+        # Missing source_entity
+        with pytest.raises(ValidationError) as exc_info:
+            CreateRelationRequest(
+                target_entity="TestEntity2",
+                properties=properties
+            )
+
+        errors = exc_info.value.errors()
+        assert any(error["loc"] == ("source_entity",) for error in errors)
+
+        # Missing target_entity
+        with pytest.raises(ValidationError) as exc_info:
+            CreateRelationRequest(
+                source_entity="TestEntity1",
+                properties=properties
+            )
+
+        errors = exc_info.value.errors()
+        assert any(error["loc"] == ("target_entity",) for error in errors)
+
+        # Missing properties
+        with pytest.raises(ValidationError) as exc_info:
+            CreateRelationRequest(
+                source_entity="TestEntity1",
+                target_entity="TestEntity2"
+            )
+
+        errors = exc_info.value.errors()
+        assert any(error["loc"] == ("properties",) for error in errors)
     
     def test_entity_update_request_valid(self):
         """Test valid EntityUpdateRequest creation."""
