@@ -92,7 +92,9 @@ def _validate_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> None:
         "query_text": ["query"],
         "query_text_stream": ["query"],
         "check_entity_exists": ["entity_name"],
+        "create_entity": ["entity_name", "properties"],
         "update_entity": ["entity_id", "properties"],
+        "create_relation": ["source_entity", "target_entity", "properties"],
         "update_relation": ["source_id", "target_id", "updated_data"],
         "delete_entity": ["entity_id"],
         "delete_relation": ["relation_id"],
@@ -639,7 +641,7 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
         ),
     ])
     
-    # Knowledge Graph Tools (7 tools)
+    # Knowledge Graph Tools (9 tools)
     tools.extend([
         Tool(
             name=_add_tool_prefix("get_knowledge_graph"),
@@ -671,6 +673,25 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                     }
                 },
                 "required": ["entity_name"]
+            }
+        ),
+        Tool(
+            name=_add_tool_prefix("create_entity"),
+            description=_add_description_prefix("Create a new entity in the knowledge graph"),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entity_name": {
+                        "type": "string",
+                        "description": "Name of the new entity"
+                    },
+                    "properties": {
+                        "type": "object",
+                        "description": "Properties of the entity (e.g., description, entity_type)",
+                        "additionalProperties": True
+                    }
+                },
+                "required": ["entity_name", "properties"]
             }
         ),
         Tool(
@@ -729,6 +750,29 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                     }
                 },
                 "required": ["source_id", "target_id", "updated_data"]
+            }
+        ),
+        Tool(
+            name=_add_tool_prefix("create_relation"),
+            description=_add_description_prefix("Create a new relation in the knowledge graph"),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "source_entity": {
+                        "type": "string",
+                        "description": "Source entity name"
+                    },
+                    "target_entity": {
+                        "type": "string",
+                        "description": "Target entity name"
+                    },
+                    "properties": {
+                        "type": "object",
+                        "description": "Properties of the relation (e.g., description, keywords, weight)",
+                        "additionalProperties": True
+                    }
+                },
+                "required": ["source_entity", "target_entity", "properties"]
             }
         ),
         Tool(
@@ -1692,7 +1736,7 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 logger.error(f"  - Full traceback: {traceback.format_exc()}")
                 raise
         
-        # Knowledge Graph Tools (7 tools)
+        # Knowledge Graph Tools (9 tools)
         elif tool_name == "get_knowledge_graph":
             logger.info("EXECUTING GET_KNOWLEDGE_GRAPH TOOL:")
             logger.info(f"  - Tool: {tool_name}")

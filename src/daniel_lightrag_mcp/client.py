@@ -11,7 +11,7 @@ from .models import (
     # Request models
     InsertTextRequest, InsertTextsRequest, QueryRequest, EntityUpdateRequest,
     RelationUpdateRequest, DeleteDocRequest, DeleteEntityRequest, DeleteRelationRequest,
-    DocumentsRequest, ClearCacheRequest, EntityExistsRequest,
+    DocumentsRequest, ClearCacheRequest, EntityExistsRequest, CreateEntityRequest, CreateRelationRequest,
     # Response models
     InsertResponse, ScanResponse, UploadResponse, DocumentsResponse, PaginatedDocsResponse,
     DeleteDocByIdResponse, ClearDocumentsResponse, PipelineStatusResponse, TrackStatusResponse,
@@ -495,7 +495,13 @@ class LightRAGClient:
         params = {"name": entity_name}
         response_data = await self._make_request("GET", "/graph/entity/exists", params=params)
         return EntityExistsResponse(**response_data)
-    
+
+    async def create_entity(self, entity_name: str, properties: Dict[str, Any]) -> EntityUpdateResponse:
+        """Create a new entity in the knowledge graph."""
+        request_data = CreateEntityRequest(entity_name=entity_name, properties=properties)
+        response_data = await self._make_request("POST", "/graph/entity/create", request_data.model_dump())
+        return EntityUpdateResponse(**response_data)
+
     async def update_entity(self, entity_id: str, properties: Dict[str, Any], entity_name: Optional[str] = None) -> EntityUpdateResponse:
         """Update an entity in the knowledge graph."""
         # Use entity_id as entity_name if not provided
@@ -520,7 +526,17 @@ class LightRAGClient:
         )
         response_data = await self._make_request("POST", "/graph/relation/edit", request_data.model_dump())
         return RelationUpdateResponse(**response_data)
-    
+
+    async def create_relation(self, source_entity: str, target_entity: str, properties: Dict[str, Any]) -> RelationUpdateResponse:
+        """Create a new relation in the knowledge graph."""
+        request_data = CreateRelationRequest(
+            source_entity=source_entity,
+            target_entity=target_entity,
+            properties=properties
+        )
+        response_data = await self._make_request("POST", "/graph/relation/create", request_data.model_dump())
+        return RelationUpdateResponse(**response_data)
+
     async def delete_entity(self, entity_id: str, entity_name: Optional[str] = None) -> DeletionResult:
         """Delete an entity from the knowledge graph."""
         # Use entity_id as entity_name if not provided

@@ -153,6 +153,19 @@ class EntityExistsRequest(BaseModel):
     entity_name: str = Field(..., description="Name of the entity to check")
 
 
+class CreateEntityRequest(BaseModel):
+    """Request model for creating a new entity."""
+    entity_name: str = Field(..., description="Name of the new entity")
+    properties: Dict[str, Any] = Field(..., description="Properties of the entity (e.g., description, entity_type)")
+
+
+class CreateRelationRequest(BaseModel):
+    """Request model for creating a new relation."""
+    source_entity: str = Field(..., description="Source entity name")
+    target_entity: str = Field(..., description="Target entity name")
+    properties: Dict[str, Any] = Field(..., description="Properties of the relation (e.g., description, keywords, weight)")
+
+
 # Authentication Request Models
 class LoginRequest(BaseModel):
     """Request model for login."""
