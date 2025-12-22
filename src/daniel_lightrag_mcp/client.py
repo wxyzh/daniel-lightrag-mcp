@@ -74,7 +74,7 @@ class LightRAGServerError(LightRAGError):
 class LightRAGClient:
     """Client for interacting with LightRAG API."""
     
-    def __init__(self, base_url: str = "http://localhost:9621", api_key: Optional[str] = None, timeout: float = 30.0):
+    def __init__(self, base_url: str = "http://localhost:9621", api_key: Optional[str] = None, timeout: float = 300.0):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
@@ -707,3 +707,176 @@ class LightRAGClient:
         """Check LightRAG server health."""
         response_data = await self._make_request("GET", "/health")
         return HealthResponse(**response_data)
+
+    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """Execute a tool by name with arguments.
+
+        Unified tool execution for both STDIO and HTTP modes.
+
+        Args:
+            tool_name: Name of the tool to execute (without prefix)
+            arguments: Tool arguments as a dictionary
+
+        Returns:
+            Tool execution result
+        """
+        # Document Management Tools
+        if tool_name == "insert_text":
+            return await self.insert_text(
+                text=arguments["text"],
+                title=arguments.get("title")
+            )
+
+        elif tool_name == "insert_texts":
+            texts = arguments.get("texts", [])
+            # Handle both dict and TextDocument objects
+            text_docs = []
+            for t in texts:
+                if isinstance(t, dict):
+                    text_docs.append(TextDocument(**t))
+                else:
+                    text_docs.append(t)
+            return await self.insert_texts(text_docs)
+
+        elif tool_name == "upload_document":
+            return await self.upload_document(arguments["file_path"])
+
+        elif tool_name == "scan_documents":
+            return await self.scan_documents()
+
+        elif tool_name == "get_documents":
+            return await self.get_documents()
+
+        elif tool_name == "get_documents_paginated":
+            return await self.get_documents_paginated(
+                page=arguments.get("page", 1),
+                page_size=arguments.get("page_size", 10),
+                status_filter=arguments.get("status_filter")
+            )
+
+        elif tool_name == "delete_document":
+            doc_ids = arguments.get("document_ids") or arguments.get("document_id")
+            if isinstance(doc_ids, str):
+                doc_ids = [doc_ids]
+            return await self.delete_document(
+                doc_ids=doc_ids,
+                delete_file=arguments.get("delete_file", False),
+                delete_llm_cache=arguments.get("delete_llm_cache", False)
+            )
+
+        elif tool_name == "clear_documents":
+            return await self.clear_documents()
+
+        # Query Tools
+        elif tool_name == "query_text":
+            return await self.query_text(
+                query=arguments["query"],
+                mode=arguments.get("mode", "mix"),
+                only_need_context=arguments.get("only_need_context", False),
+                only_need_prompt=arguments.get("only_need_prompt", False),
+                top_k=arguments.get("top_k"),
+                max_entity_tokens=arguments.get("max_entity_tokens"),
+                max_relation_tokens=arguments.get("max_relation_tokens"),
+                include_references=arguments.get("include_references", True),
+                include_chunk_content=arguments.get("include_chunk_content", False),
+                enable_rerank=arguments.get("enable_rerank", True),
+                conversation_history=arguments.get("conversation_history")
+            )
+
+        elif tool_name == "query_text_stream":
+            return self.query_text_stream(
+                query=arguments["query"],
+                mode=arguments.get("mode", "mix"),
+                only_need_context=arguments.get("only_need_context", False),
+                only_need_prompt=arguments.get("only_need_prompt", False),
+                top_k=arguments.get("top_k"),
+                max_entity_tokens=arguments.get("max_entity_tokens"),
+                max_relation_tokens=arguments.get("max_relation_tokens"),
+                include_references=arguments.get("include_references", True),
+                include_chunk_content=arguments.get("include_chunk_content", False),
+                enable_rerank=arguments.get("enable_rerank", True),
+                conversation_history=arguments.get("conversation_history")
+            )
+
+        elif tool_name == "query_data":
+            return await self.query_data(
+                query=arguments.get("query", ""),
+                limit_entities=arguments.get("limit_entities", 100),
+                limit_relations=arguments.get("limit_relations", 100),
+                limit_chunks=arguments.get("limit_chunks", 100)
+            )
+
+        # Knowledge Graph Tools
+        elif tool_name == "get_knowledge_graph":
+            return await self.get_knowledge_graph(arguments.get("label", "*"))
+
+        elif tool_name == "get_graph_labels":
+            return await self.get_graph_labels()
+
+        elif tool_name == "get_popular_labels":
+            return await self.get_popular_labels(arguments.get("limit", 300))
+
+        elif tool_name == "search_labels":
+            return await self.search_labels(
+                query=arguments["query"],
+                limit=arguments.get("limit", 50)
+            )
+
+        elif tool_name == "check_entity_exists":
+            return await self.check_entity_exists(arguments["entity_name"])
+
+        elif tool_name == "create_entity":
+            return await self.create_entity(
+                entity_name=arguments["entity_name"],
+                entity_data=arguments.get("entity_data", {})
+            )
+
+        elif tool_name == "update_entity":
+            return await self.update_entity(
+                entity_name=arguments["entity_name"],
+                updated_data=arguments.get("updated_data", {}),
+                allow_rename=arguments.get("allow_rename", False),
+                allow_merge=arguments.get("allow_merge", False)
+            )
+
+        elif tool_name == "update_relation":
+            return await self.update_relation(
+                source_id=arguments["source_id"],
+                target_id=arguments["target_id"],
+                updated_data=arguments.get("updated_data", {})
+            )
+
+        elif tool_name == "create_relation":
+            return await self.create_relation(
+                source_entity=arguments["source_entity"],
+                target_entity=arguments["target_entity"],
+                relation_data=arguments.get("relation_data", {})
+            )
+
+        elif tool_name == "delete_entity":
+            return await self.delete_entity(arguments["entity_name"])
+
+        elif tool_name == "delete_relation":
+            return await self.delete_relation(
+                source_entity=arguments.get("source_entity", ""),
+                target_entity=arguments.get("target_entity", "")
+            )
+
+        # System Management Tools
+        elif tool_name == "get_pipeline_status":
+            return await self.get_pipeline_status()
+
+        elif tool_name == "get_track_status":
+            return await self.get_track_status(arguments["track_id"])
+
+        elif tool_name == "get_document_status_counts":
+            return await self.get_document_status_counts()
+
+        elif tool_name == "clear_cache":
+            return await self.clear_cache(arguments.get("cache_type"))
+
+        elif tool_name == "get_health":
+            return await self.get_health()
+
+        else:
+            raise ValueError(f"Unknown tool: {tool_name}")

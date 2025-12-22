@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  # =====================================================
+  # HTTP 模式 - 单个 LightRAG 实例
+  # =====================================================
+  lightrag-mcp:
+    build: .
+    container_name: lightrag-mcp
+    environment:
+      - LIGHTRAG_BASE_URL=http://lightrag:9621
+      - LIGHTRAG_TIMEOUT=30
+      # 工具前缀 (可选)
+      # LIGHTRAG_TOOL_PREFIX=prefix1_
+    ports:
+      - "8080:8080"
+
+  # =====================================================
+  # HTTP 模式 - 多实例共用同一端口 (path 路由)
+  # 格式: LIGHTRAG_HTTP_PREFIXES=前缀:URL:API密钥,...
+  # =====================================================
+  lightrag-mcp-multi:
+    build: .
+    container_name: lightrag-mcp-multi
+    environment:
+      # 多实例配置: 前缀:URL:API密钥
+      - LIGHTRAG_HTTP_PREFIXES=prefix1:http://lightrag:9621:,prefix2:http://lightrag:9622:
+    ports:
+      - "8080:8080"
+
+  # =====================================================
+  # STDIO 模式 - 用于 Claude Desktop
+  # =====================================================
+  lightrag-mcp-stdio:
+    build: .
+    container_name: lightrag-mcp-stdio
+    command: ["python", "-m", "daniel_lightrag_mcp"]
+    environment:
+      - LIGHTRAG_BASE_URL=http://lightrag:9621
+      - LIGHTRAG_TIMEOUT=30

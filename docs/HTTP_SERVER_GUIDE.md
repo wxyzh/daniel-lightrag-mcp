@@ -30,13 +30,25 @@ pip install fastapi uvicorn
 
 ### 1. Basic Usage (Single Instance)
 
+The HTTP server can be started using the main command with the `--http` flag:
+
 ```bash
-# Start HTTP server on default port (8000)
+# Start HTTP server on default port (8765)
+daniel-lightrag-mcp --http
+
+# Or use the shortcut command
 daniel-lightrag-http
 
 # Or specify host and port
-daniel-lightrag-http --host 0.0.0.0 --port 8080
+daniel-lightrag-mcp --http --host 0.0.0.0 --port 8080
 ```
+
+**Note:** The `daniel-lightrag-http` command is a shortcut that automatically adds the `--http` flag.
+
+**Default Configuration:**
+- Host: `127.0.0.1` (localhost only, for security)
+- Port: `8765`
+- To allow external connections: use `--host 0.0.0.0`
 
 ### 2. Configure Multiple Instances
 
@@ -162,6 +174,16 @@ export LIGHTRAG_BASE_URL="http://localhost:9621"
 export LIGHTRAG_API_KEY="your-api-key"
 ```
 
+**HTTP Server Host and Port:**
+```bash
+# Host to bind (default: 0.0.0.0)
+export LIGHTRAG_HTTP_HOST="0.0.0.0"
+
+# Port to bind (default: 8000)
+# Change this if port 8000 is already in use
+export LIGHTRAG_HTTP_PORT="8080"
+```
+
 **Multiple Instances:**
 ```bash
 export LIGHTRAG_HTTP_PREFIXES="prefix1:url1:key1,prefix2:url2:key2"
@@ -170,6 +192,22 @@ export LIGHTRAG_HTTP_PREFIXES="prefix1:url1:key1,prefix2:url2:key2"
 Example:
 ```bash
 export LIGHTRAG_HTTP_PREFIXES="novel_style:http://localhost:9621:secret1,novel_content:http://localhost:9622:secret2,research:http://localhost:9623:secret3"
+```
+
+### Priority Order
+
+Configuration is resolved in the following order:
+1. **Command-line arguments** (highest priority)
+2. **Environment variables**
+3. **Default values** (lowest priority)
+
+Example:
+```bash
+# Set default port via environment
+export LIGHTRAG_HTTP_PORT=9000
+
+# Override with command line
+daniel-lightrag-http --port 8080  # Uses 8080, not 9000
 ```
 
 ### Server Options

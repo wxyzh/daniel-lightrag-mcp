@@ -25,6 +25,8 @@ A comprehensive MCP (Model Context Protocol) server that provides **100% functio
 
 ## Quick Start
 
+### stdio MCP Server (Default)
+
 1. **Install the server**:
    ```bash
    pip install -e .
@@ -47,38 +49,65 @@ A comprehensive MCP (Model Context Protocol) server that provides **100% functio
 4. **Test the connection**:
    Use the `get_health` tool to verify everything is working.
 
-## HTTP Server (NEW! 🚀)
+### HTTP Server Mode
 
-In addition to the stdio MCP server, you can also run a REST API HTTP server:
+The same command can start an HTTP server with the `--http` flag:
 
 ```bash
-# Install with HTTP dependencies
-pip install -e .
+# Start HTTP server (default: 127.0.0.1:8765)
+daniel-lightrag-mcp --http
 
-# Start HTTP server
+# Or use the shortcut command
 daniel-lightrag-http
 
-# Or specify host and port
-daniel-lightrag-http --host 0.0.0.0 --port 8080
+# Specify host and port
+daniel-lightrag-mcp --http --host 0.0.0.0 --port 8080
+
+# Or via environment variables
+export LIGHTRAG_HTTP_PORT=8080
+daniel-lightrag-mcp --http
 ```
 
-**HTTP API Features:**
+## HTTP Server Details
+
+The HTTP server provides REST API access to all MCP tools:
+
+**Key Features:**
 - 🌐 REST API for all MCP tools
 - 🔀 Prefix-based routing: `/mcp/{prefix}/{tool_name}`
 - 📡 Streaming HTTP responses (NDJSON format)
 - 📚 Automatic API docs at `/docs`
 - 🔌 Completely separate from stdio MCP
+- ⚙️ Configurable via environment variables
+
+**Command Options:**
+```bash
+daniel-lightrag-mcp --http [OPTIONS]
+
+Options:
+  --host TEXT     Host to bind (default: 127.0.0.1, env: LIGHTRAG_HTTP_HOST)
+  --port INTEGER  Port to bind (default: 8765, env: LIGHTRAG_HTTP_PORT)
+  --reload        Enable auto-reload for development
+  --help          Show help message
+```
+
+**Environment Variables:**
+```bash
+LIGHTRAG_HTTP_HOST=127.0.0.1    # Host to bind (default: 127.0.0.1)
+LIGHTRAG_HTTP_PORT=8765         # Port to bind (default: 8765)
+LIGHTRAG_HTTP_PREFIXES=...      # Multiple instances config
+```
 
 **Quick Test:**
 ```bash
 # Health check
-curl http://localhost:8000/health
+curl http://localhost:8765/health
 
 # List tools
-curl http://localhost:8000/mcp/novel_style/tools
+curl http://localhost:8765/mcp/novel_style/tools
 
 # Execute tool
-curl -X POST http://localhost:8000/mcp/novel_style/novel_style_query_text \
+curl -X POST http://localhost:8765/mcp/novel_style/novel_style_query_text \
   -H "Content-Type: application/json" \
   -d '{"arguments": {"query": "What is the writing style?", "mode": "hybrid"}}'
 ```

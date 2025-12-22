@@ -83,6 +83,10 @@ app = FastAPI(
 
 async def initialize_clients():
     """Initialize LightRAG clients for all configured prefixes."""
+    # Read timeout from environment
+    timeout = float(os.getenv("LIGHTRAG_TIMEOUT", "300"))
+    logger.info(f"Using timeout: {timeout} seconds")
+
     # Read prefix configurations from environment
     # Format: LIGHTRAG_HTTP_PREFIXES=prefix1:url1:key1,prefix2:url2:key2
     config = os.getenv("LIGHTRAG_HTTP_PREFIXES", "")
@@ -92,19 +96,61 @@ async def initialize_clients():
         # Default configuration
         default_url = os.getenv("LIGHTRAG_BASE_URL", "http://localhost:9621")
         default_key = os.getenv("LIGHTRAG_API_KEY", "")
-        clients["default"] = LightRAGClient(base_url=default_url, api_key=default_key)
+        clients["default"] = LightRAGClient(base_url=default_url, api_key=default_key, timeout=timeout)
         logger.info(f"Initialized default client: {default_url}")
         return
 
     # Parse configuration
     for item in config.split(","):
-        parts = item.strip().split(":")
-        if len(parts) >= 2:
-            prefix = parts[0]
-            url = parts[1]
-            api_key = parts[2] if len(parts) > 2 else ""
+        item = item.strip()
+        if not item:
+            continue
 
-            clients[prefix] = LightRAGClient(base_url=url, api_key=api_key)
+        # Split on first colon only: prefix:url:key -> prefix, url:key
+        first_colon = item.find(":")
+        if first_colon > 0:
+            prefix = item[:first_colon]
+            rest = item[first_colon + 1:]
+
+            # Handle URL with protocol (http://, https://)
+            # Format: prefix:http://host:port or prefix:https://host:port:key
+            if rest.startswith("http://"):
+                url_part = rest[7:]  # Remove "http://"
+                # Find the port in "host:port" or use empty key
+                if ":" in url_part:
+                    host, port = url_part.split(":", 1)
+                    # Check if there's another colon for API key
+                    if ":" in port:
+                        port, api_key = port.split(":", 1)
+                        url = f"http://{host}:{port}"
+                    else:
+                        url = f"http://{host}:{port}"
+                        api_key = ""
+                else:
+                    url = f"http://{url_part}"
+                    api_key = ""
+            elif rest.startswith("https://"):
+                url_part = rest[8:]  # Remove "https://"
+                if ":" in url_part:
+                    host, port = url_part.split(":", 1)
+                    if ":" in port:
+                        port, api_key = port.split(":", 1)
+                        url = f"https://{host}:{port}"
+                    else:
+                        url = f"https://{host}:{port}"
+                        api_key = ""
+                else:
+                    url = f"https://{url_part}"
+                    api_key = ""
+            else:
+                # No protocol, simple format: url or url:key
+                if ":" in rest:
+                    url, api_key = rest.split(":", 1)
+                else:
+                    url = rest
+                    api_key = ""
+
+            clients[prefix] = LightRAGClient(base_url=url, api_key=api_key, timeout=timeout)
             logger.info(f"Initialized client for prefix '{prefix}': {url}")
 
 
@@ -143,20 +189,26 @@ async def health_check():
 
 @app.get("/mcp/{prefix}/tools")
 async def list_tools(prefix: str):
-    """List all tools for a specific prefix."""
+    """List all tools for a specific prefix.
+
+    Returns tools with URL path prefix prepended to their names.
+    """
     try:
+        # Validate prefix is configured
+        if prefix not in clients:
+            raise HTTPException(status_code=404, detail=f"Unknown prefix: {prefix}")
+
         # Get all tools
         tools = await handle_list_tools()
 
-        # Filter tools by prefix
+        # Return all tools with prefix prepended
         prefixed_tools = []
         for tool in tools:
-            if tool.name.startswith(f"{prefix}_"):
-                prefixed_tools.append(ToolInfo(
-                    name=tool.name,
-                    description=tool.description,
-                    input_schema=tool.inputSchema
-                ))
+            prefixed_tools.append(ToolInfo(
+                name=f"{prefix}_{tool.name}",
+                description=tool.description,
+                input_schema=tool.inputSchema
+            ))
 
         return {
             "prefix": prefix,
@@ -164,6 +216,8 @@ async def list_tools(prefix: str):
             "count": len(prefixed_tools)
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error listing tools for prefix '{prefix}': {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -171,10 +225,18 @@ async def list_tools(prefix: str):
 
 @app.post("/mcp/{prefix}/{tool_name}")
 async def execute_tool(prefix: str, tool_name: str, request: ToolRequest):
-    """Execute a tool with the given arguments."""
+    """Execute a tool with the given arguments.
+
+    URL path: /mcp/{prefix}/{prefix}_{actual_tool_name}
+    """
     try:
+        # Validate prefix is configured
+        if prefix not in clients:
+            raise HTTPException(status_code=404, detail=f"Unknown prefix: {prefix}")
+
         # Validate prefix matches tool_name
-        if not tool_name.startswith(f"{prefix}_"):
+        expected_prefix = f"{prefix}_"
+        if not tool_name.startswith(expected_prefix):
             raise HTTPException(
                 status_code=400,
                 detail=f"Tool name '{tool_name}' does not match prefix '{prefix}'"
@@ -184,7 +246,7 @@ async def execute_tool(prefix: str, tool_name: str, request: ToolRequest):
         client = get_client(prefix)
 
         # Remove prefix to get actual tool name
-        actual_tool_name = _remove_tool_prefix(tool_name)
+        actual_tool_name = tool_name[len(expected_prefix):]
 
         # Validate arguments
         _validate_tool_arguments(actual_tool_name, request.arguments)
@@ -215,90 +277,8 @@ async def execute_regular_tool(
     tool_name: str,
     arguments: Dict[str, Any]
 ) -> ToolResponse:
-    """Execute a regular (non-streaming) tool."""
-
-    # Document Management Tools
-    if tool_name == "insert_text":
-        result = await client.insert_text(arguments["text"])
-
-    elif tool_name == "insert_texts":
-        result = await client.insert_texts(arguments["texts"])
-
-    elif tool_name == "upload_document":
-        result = await client.upload_document(arguments["file_path"])
-
-    elif tool_name == "scan_documents":
-        result = await client.scan_documents()
-
-    elif tool_name == "get_documents":
-        result = await client.get_documents()
-
-    elif tool_name == "get_documents_paginated":
-        result = await client.get_documents_paginated(
-            arguments["page"],
-            arguments["page_size"]
-        )
-
-    elif tool_name == "delete_document":
-        doc_ids = arguments.get("document_ids") or [arguments.get("document_id")]
-        result = await client.delete_document(
-            doc_ids=doc_ids,
-            delete_file=arguments.get("delete_file", False),
-            delete_llm_cache=arguments.get("delete_llm_cache", False)
-        )
-
-    # Query Tools
-    elif tool_name == "query_text":
-        result = await client.query_text(
-            arguments["query"],
-            mode=arguments.get("mode", "hybrid"),
-            only_need_context=arguments.get("only_need_context", False)
-        )
-
-    # Knowledge Graph Tools
-    elif tool_name == "get_knowledge_graph":
-        result = await client.get_knowledge_graph()
-
-    elif tool_name == "get_graph_labels":
-        result = await client.get_graph_labels()
-
-    elif tool_name == "check_entity_exists":
-        result = await client.check_entity_exists(arguments["entity_name"])
-
-    elif tool_name == "update_entity":
-        result = await client.update_entity(
-            arguments["entity_id"],
-            arguments["properties"]
-        )
-
-    elif tool_name == "update_relation":
-        result = await client.update_relation(
-            arguments["source_id"],
-            arguments["target_id"],
-            arguments["updated_data"]
-        )
-
-    elif tool_name == "delete_entity":
-        result = await client.delete_entity(arguments["entity_id"])
-
-    elif tool_name == "delete_relation":
-        result = await client.delete_relation(arguments["relation_id"])
-
-    # System Management Tools
-    elif tool_name == "get_pipeline_status":
-        result = await client.get_pipeline_status()
-
-    elif tool_name == "get_track_status":
-        result = await client.get_track_status(arguments["track_id"])
-
-    elif tool_name == "get_document_status_counts":
-        result = await client.get_document_status_counts()
-
-    elif tool_name == "get_health":
-        result = await client.get_health()
-
-    else:
-        raise HTTPException(status_code=404, detail=f"Unknown tool: {tool_name}")
+    """Execute a regular (non-streaming) tool using unified executor."""
+    result = await client.execute_tool(tool_name, arguments)
 
     # Serialize result
     if hasattr(result, 'model_dump'):
@@ -317,24 +297,30 @@ async def execute_streaming_tool(
     arguments: Dict[str, Any]
 ) -> StreamingResponse:
     """Execute a streaming tool and return streaming HTTP response."""
+    # query_text_stream returns an async generator from the client
+    stream_generator = client.query_text_stream(
+        query=arguments["query"],
+        mode=arguments.get("mode", "mix"),
+        only_need_context=arguments.get("only_need_context", False),
+        only_need_prompt=arguments.get("only_need_prompt", False),
+        top_k=arguments.get("top_k"),
+        max_entity_tokens=arguments.get("max_entity_tokens"),
+        max_relation_tokens=arguments.get("max_relation_tokens"),
+        include_references=arguments.get("include_references", True),
+        include_chunk_content=arguments.get("include_chunk_content", False),
+        enable_rerank=arguments.get("enable_rerank", True),
+        conversation_history=arguments.get("conversation_history")
+    )
 
-    async def stream_generator() -> AsyncGenerator[bytes, None]:
+    async def stream_wrapper() -> AsyncGenerator[bytes, None]:
         """Generate streaming response chunks."""
         try:
-            if tool_name == "query_text_stream":
-                async for chunk in client.query_text_stream(
-                    arguments["query"],
-                    mode=arguments.get("mode", "hybrid"),
-                    only_need_context=arguments.get("only_need_context", False)
-                ):
-                    # Send each chunk as NDJSON (newline-delimited JSON)
-                    yield (json.dumps({"type": "chunk", "data": chunk}) + "\n").encode("utf-8")
+            async for chunk in stream_generator:
+                # Send each chunk as NDJSON (newline-delimited JSON)
+                yield (json.dumps({"type": "chunk", "data": chunk}) + "\n").encode("utf-8")
 
-                # Send completion signal
-                yield (json.dumps({"type": "done", "status": "completed"}) + "\n").encode("utf-8")
-
-            else:
-                raise HTTPException(status_code=400, detail=f"Tool '{tool_name}' does not support streaming")
+            # Send completion signal
+            yield (json.dumps({"type": "done", "status": "completed"}) + "\n").encode("utf-8")
 
         except LightRAGError as e:
             error_data = {"type": "error", "error": str(e), "details": e.to_dict()}
@@ -346,7 +332,7 @@ async def execute_streaming_tool(
             yield (json.dumps(error_data) + "\n").encode("utf-8")
 
     return StreamingResponse(
-        stream_generator(),
+        stream_wrapper(),
         media_type="application/x-ndjson",
         headers={
             "Cache-Control": "no-cache",
@@ -380,11 +366,20 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8000):
+def run_server(host: str = None, port: int = None):
     """Run the HTTP server."""
     import uvicorn
 
+    # Read from environment variables if not provided
+    if host is None:
+        host = os.getenv("LIGHTRAG_HTTP_HOST", "127.0.0.1")
+    if port is None:
+        port = int(os.getenv("LIGHTRAG_HTTP_PORT", "8765"))
+
     logger.info(f"Starting HTTP server on {host}:{port}")
+    logger.info(f"Environment: LIGHTRAG_HTTP_HOST={os.getenv('LIGHTRAG_HTTP_HOST', 'not set')}")
+    logger.info(f"Environment: LIGHTRAG_HTTP_PORT={os.getenv('LIGHTRAG_HTTP_PORT', 'not set')}")
+
     uvicorn.run(
         "daniel_lightrag_mcp.http_server:app",
         host=host,

@@ -14,14 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Streaming HTTP responses using NDJSON format
   - Multiple instance support via environment configuration
   - Automatic API documentation (Swagger/ReDoc)
-  - Separate CLI command: `daniel-lightrag-http`
+  - **Unified CLI entry point**: Use `daniel-lightrag-mcp --http` or `daniel-lightrag-http`
   - Complete separation from stdio MCP server
+
+- **Unified CLI Interface**
+  - Single command `daniel-lightrag-mcp` with mode selection
+  - Default mode: stdio MCP server
+  - Add `--http` flag to start HTTP server
+  - `daniel-lightrag-http` is now a shortcut that adds `--http` automatically
+  - HTTP-specific options: `--host`, `--port`, `--reload`
 
 - **HTTP Server Documentation**
   - Complete HTTP server guide (`docs/HTTP_SERVER_GUIDE.md`)
   - Python client examples (`examples/http_client_python.py`)
   - JavaScript/Node.js client examples (`examples/http_client_javascript.js`)
   - Deployment guides (Docker, nginx, systemd)
+
+- **HTTP Server Tests**
+  - Comprehensive test suite (`tests/test_http_server.py`)
+  - Tests for all endpoints and streaming responses
+  - Error handling and edge case tests
 
 - **Dependencies**
   - Added `fastapi>=0.104.0` for HTTP server
