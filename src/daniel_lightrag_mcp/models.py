@@ -23,6 +23,7 @@ class QueryMode(str, Enum):
     LOCAL = "local"
     GLOBAL = "global"
     HYBRID = "hybrid"
+    MIX = "mix"
 
 
 class PipelineStatus(str, Enum):
@@ -114,7 +115,21 @@ class QueryRequest(BaseModel):
     query: str = Field(..., description="Query text")
     mode: QueryMode = Field(QueryMode.HYBRID, description="Query mode")
     only_need_context: bool = Field(False, description="Whether to only return context")
+    only_need_prompt: bool = Field(False, description="Whether to only return the prompt")
     stream: bool = Field(False, description="Whether to stream results")
+
+    # Advanced retrieval parameters
+    top_k: Optional[int] = Field(None, description="Number of top results to retrieve")
+    max_entity_tokens: Optional[int] = Field(None, description="Maximum entity tokens for local mode")
+    max_relation_tokens: Optional[int] = Field(None, description="Maximum relation tokens for global mode")
+
+    # Reference and reranking parameters
+    include_references: bool = Field(False, description="Whether to include references in response")
+    include_chunk_content: bool = Field(False, description="Whether to include chunk content in references")
+    enable_rerank: bool = Field(False, description="Whether to enable reranking")
+
+    # Conversation history
+    conversation_history: Optional[List[Dict[str, str]]] = Field(None, description="Conversation history for multi-turn queries")
 
 
 # Knowledge Graph Request Models
