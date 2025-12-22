@@ -91,22 +91,22 @@ class TestCommonModels:
             page=2,
             page_size=20,
             total_pages=5,
-            total_items=100
+            total_count=100
         )
-        
+
         assert pagination.page == 2
         assert pagination.page_size == 20
         assert pagination.total_pages == 5
-        assert pagination.total_items == 100
+        assert pagination.total_count == 100
     
     def test_pagination_info_defaults(self):
         """Test PaginationInfo with default values."""
         pagination = PaginationInfo()
-        
+
         assert pagination.page == 1
         assert pagination.page_size == 10
         assert pagination.total_pages is None
-        assert pagination.total_items is None
+        assert pagination.total_count is None
     
     def test_pagination_info_validation_errors(self):
         """Test PaginationInfo validation errors."""
@@ -322,25 +322,29 @@ class TestRequestModels:
     
     def test_entity_update_request_valid(self):
         """Test valid EntityUpdateRequest creation."""
-        properties = {"name": "Updated Entity", "type": "concept"}
+        updated_data = {"name": "Updated Entity", "type": "concept"}
         request = EntityUpdateRequest(
             entity_id="ent_123",
-            properties=properties
+            entity_name="TestEntity",
+            updated_data=updated_data
         )
-        
+
         assert request.entity_id == "ent_123"
-        assert request.properties == properties
+        assert request.entity_name == "TestEntity"
+        assert request.updated_data == updated_data
     
     def test_relation_update_request_valid(self):
         """Test valid RelationUpdateRequest creation."""
-        properties = {"type": "strongly_related", "weight": 0.9}
+        updated_data = {"type": "strongly_related", "weight": 0.9}
         request = RelationUpdateRequest(
-            relation_id="rel_123",
-            properties=properties
+            source_id="ent_123",
+            target_id="ent_456",
+            updated_data=updated_data
         )
-        
-        assert request.relation_id == "rel_123"
-        assert request.properties == properties
+
+        assert request.source_id == "ent_123"
+        assert request.target_id == "ent_456"
+        assert request.updated_data == updated_data
     
     def test_documents_request_valid(self):
         """Test valid DocumentsRequest creation."""
@@ -381,20 +385,23 @@ class TestResponseModels:
     def test_scan_response_valid(self):
         """Test valid ScanResponse creation."""
         response = ScanResponse(
-            scanned=5,
+            status="success",
+            track_id="track_123",
             new_documents=["doc1.txt", "doc2.txt"],
             message="Scan completed"
         )
-        
-        assert response.scanned == 5
+
+        assert response.status == "success"
+        assert response.track_id == "track_123"
         assert len(response.new_documents) == 2
         assert response.message == "Scan completed"
-    
+
     def test_scan_response_defaults(self):
         """Test ScanResponse with default values."""
-        response = ScanResponse(scanned=0)
-        
-        assert response.scanned == 0
+        response = ScanResponse(status="success", track_id="track_123")
+
+        assert response.status == "success"
+        assert response.track_id == "track_123"
         assert response.new_documents == []
         assert response.message is None
     
@@ -515,70 +522,74 @@ class TestResponseModels:
     def test_pipeline_status_response_valid(self):
         """Test valid PipelineStatusResponse creation."""
         response = PipelineStatusResponse(
-            status=PipelineStatus.RUNNING,
+            autoscanned=True,
+            busy=True,
             progress=75.5,
             current_task="processing documents",
             message="Pipeline running normally"
         )
-        
-        assert response.status == PipelineStatus.RUNNING
+
+        assert response.autoscanned is True
+        assert response.busy is True
         assert response.progress == 75.5
         assert response.current_task == "processing documents"
         assert response.message == "Pipeline running normally"
-    
+
     def test_pipeline_status_response_progress_validation(self):
         """Test PipelineStatusResponse progress validation."""
         # Valid progress
-        response = PipelineStatusResponse(status=PipelineStatus.RUNNING, progress=50.0)
+        response = PipelineStatusResponse(autoscanned=False, busy=False, progress=50.0)
         assert response.progress == 50.0
-        
+
         # Progress too low
         with pytest.raises(ValidationError) as exc_info:
-            PipelineStatusResponse(status=PipelineStatus.RUNNING, progress=-1.0)
-        
+            PipelineStatusResponse(autoscanned=False, busy=False, progress=-1.0)
+
         errors = exc_info.value.errors()
         assert any(error["type"] == "greater_than_equal" for error in errors)
-        
+
         # Progress too high
         with pytest.raises(ValidationError) as exc_info:
-            PipelineStatusResponse(status=PipelineStatus.RUNNING, progress=101.0)
-        
+            PipelineStatusResponse(autoscanned=False, busy=False, progress=101.0)
+
         errors = exc_info.value.errors()
         assert any(error["type"] == "less_than_equal" for error in errors)
     
     def test_status_counts_response_valid(self):
         """Test valid StatusCountsResponse creation."""
         response = StatusCountsResponse(
-            pending=5,
-            processing=2,
-            processed=100,
-            failed=1,
-            total=108
+            status_counts={
+                "pending": 5,
+                "processing": 2,
+                "processed": 100,
+                "failed": 1,
+                "all": 108
+            }
         )
-        
-        assert response.pending == 5
-        assert response.processing == 2
-        assert response.processed == 100
-        assert response.failed == 1
-        assert response.total == 108
-    
+
+        assert response.status_counts["pending"] == 5
+        assert response.status_counts["processing"] == 2
+        assert response.status_counts["processed"] == 100
+        assert response.status_counts["failed"] == 1
+        assert response.status_counts["all"] == 108
+
     def test_status_counts_response_defaults(self):
-        """Test StatusCountsResponse with default values."""
-        response = StatusCountsResponse()
-        
-        assert response.pending == 0
-        assert response.processing == 0
-        assert response.processed == 0
-        assert response.failed == 0
-        assert response.total == 0
-    
+        """Test StatusCountsResponse with empty counts."""
+        response = StatusCountsResponse(status_counts={})
+
+        assert response.status_counts == {}
+        assert response.status_counts.get("pending", 0) == 0
+        assert response.status_counts.get("processing", 0) == 0
+        assert response.status_counts.get("processed", 0) == 0
+        assert response.status_counts.get("failed", 0) == 0
+
     def test_status_counts_response_validation(self):
-        """Test StatusCountsResponse validation for negative values."""
+        """Test StatusCountsResponse validation for missing required field."""
         with pytest.raises(ValidationError) as exc_info:
-            StatusCountsResponse(pending=-1)
-        
+            StatusCountsResponse()
+
         errors = exc_info.value.errors()
-        assert any(error["type"] == "greater_than_equal" for error in errors)
+        assert any(error["type"] == "missing" for error in errors)
     
     def test_health_response_valid(self):
         """Test valid HealthResponse creation."""

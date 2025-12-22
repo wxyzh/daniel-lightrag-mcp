@@ -44,12 +44,12 @@ class TextDocument(BaseModel):
 
 class PaginationInfo(BaseModel):
     """Pagination information model."""
-    page: int = Field(..., description="Page number")
-    page_size: int = Field(..., description="Number of items per page")
-    total_count: int = Field(..., description="Total number of items")
-    total_pages: int = Field(..., description="Total number of pages")
-    has_next: bool = Field(..., description="Whether there is a next page")
-    has_prev: bool = Field(..., description="Whether there is a previous page")
+    page: int = Field(1, ge=1, description="Page number")
+    page_size: int = Field(10, ge=1, le=100, description="Number of items per page")
+    total_count: Optional[int] = Field(None, description="Total number of items")
+    total_pages: Optional[int] = Field(None, description="Total number of pages")
+    has_next: Optional[bool] = Field(None, description="Whether there is a next page")
+    has_prev: Optional[bool] = Field(None, description="Whether there is a previous page")
 
 
 class ValidationError(BaseModel):
@@ -185,10 +185,9 @@ class InsertResponse(BaseModel):
 class ScanResponse(BaseModel):
     """Response model for document scanning."""
     status: str = Field(..., description="Scanning status")
-    message: str = Field(..., description="Status message")
+    message: Optional[str] = Field(None, description="Status message")
     track_id: str = Field(..., description="Tracking ID for the scan operation")
     new_documents: List[str] = Field(default_factory=list, description="List of new document names")
-    message: Optional[str] = None
 
 
 class UploadResponse(BaseModel):
@@ -268,9 +267,8 @@ class StatusCountsResponse(BaseModel):
 class ClearCacheResponse(BaseModel):
     """Response model for cache clearing."""
     status: str = Field(..., description="Cache clearing status")
-    message: str = Field(..., description="Status message")
+    message: Optional[str] = Field(None, description="Status message")
     cache_type: Optional[str] = None
-    message: Optional[str] = None
 
 
 class DeletionResult(BaseModel):
