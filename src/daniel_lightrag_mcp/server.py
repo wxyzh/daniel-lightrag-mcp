@@ -62,7 +62,7 @@ def _validate_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> None:
         "insert_texts": ["texts"],
         "upload_document": ["file_path"],
         "get_documents_paginated": ["page", "page_size"],
-        "delete_document": ["document_id"],
+        "delete_document": [],  # Special validation logic for delete_document
         "query_text": ["query"],
         "query_text_stream": ["query"],
         "check_entity_exists": ["entity_name"],
@@ -100,7 +100,40 @@ def _validate_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> None:
         valid_modes = ["naive", "local", "global", "hybrid"]
         if mode not in valid_modes:
             raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
-    
+
+    elif tool_name == "delete_document":
+        # Special validation for delete_document: must have either document_id or document_ids
+        document_id = arguments.get("document_id")
+        document_ids = arguments.get("document_ids")
+
+        if not document_id and not document_ids:
+            raise LightRAGValidationError("Either 'document_id' or 'document_ids' must be provided for delete_document")
+
+        if document_id and document_ids:
+            raise LightRAGValidationError("Cannot specify both 'document_id' and 'document_ids'. Use one or the other")
+
+        # Validate document_ids if provided
+        if document_ids:
+            if not isinstance(document_ids, list):
+                raise LightRAGValidationError("'document_ids' must be an array")
+
+            if not document_ids:
+                raise LightRAGValidationError("'document_ids' cannot be an empty array")
+
+            for doc_id in document_ids:
+                if not isinstance(doc_id, str) or not doc_id.strip():
+                    raise LightRAGValidationError("All document IDs in 'document_ids' must be non-empty strings")
+
+        # Validate boolean parameters
+        delete_file = arguments.get("delete_file", False)
+        delete_llm_cache = arguments.get("delete_llm_cache", False)
+
+        if not isinstance(delete_file, bool):
+            raise LightRAGValidationError("'delete_file' must be a boolean")
+
+        if not isinstance(delete_llm_cache, bool):
+            raise LightRAGValidationError("'delete_llm_cache' must be a boolean")
+
     logger.debug(f"Tool arguments validation passed for {tool_name}")
 
 
@@ -396,16 +429,29 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
         ),
         Tool(
             name="delete_document",
-            description="Delete a specific document by ID",
+            description="Delete one or more documents by ID. Use either 'document_id' for single deletion or 'document_ids' for batch deletion.",
             inputSchema={
                 "type": "object",
                 "properties": {
+                    "document_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Array of document IDs to delete (for batch deletion)"
+                    },
                     "document_id": {
                         "type": "string",
-                        "description": "ID of the document to delete"
+                        "description": "Single document ID to delete (for backward compatibility)"
+                    },
+                    "delete_file": {
+                        "type": "boolean",
+                        "description": "Whether to delete the corresponding file in the upload directory"
+                    },
+                    "delete_llm_cache": {
+                        "type": "boolean",
+                        "description": "Whether to delete cached LLM extraction results for the documents"
                     }
                 },
-                "required": ["document_id"]
+                "required": []
             }
         ),
         # Tool(
@@ -1209,23 +1255,47 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
             logger.info(f"  - Client type: {type(lightrag_client)}")
             logger.info(f"  - Client base_url: {lightrag_client.base_url}")
             logger.info(f"  - Raw arguments: {arguments}")
-            
-            document_id = arguments.get("document_id", "")
+
+            # Extract parameters with support for both old and new formats
+            document_id = arguments.get("document_id")
+            document_ids = arguments.get("document_ids")
+            delete_file = arguments.get("delete_file", False)
+            delete_llm_cache = arguments.get("delete_llm_cache", False)
+
+            # Determine which document IDs to delete
+            if document_id:
+                doc_ids_to_delete = [document_id]
+                deletion_type = "single"
+            elif document_ids:
+                doc_ids_to_delete = document_ids
+                deletion_type = "batch"
+            else:
+                logger.error("DELETE_DOCUMENT ERROR:")
+                logger.error("  - No document IDs provided")
+                raise LightRAGValidationError("Either 'document_id' or 'document_ids' must be provided")
+
             logger.info(f"DELETE_DOCUMENT PARAMETERS:")
-            logger.info(f"  - document_id: '{document_id}'")
-            logger.info(f"  - document_id type: {type(document_id)}")
-            
-            if not document_id or not document_id.strip():
-                logger.error("DELETE_DOCUMENT VALIDATION ERROR:")
-                logger.error("  - Document ID is empty or whitespace only")
-                raise LightRAGValidationError("Document ID cannot be empty")
-            
+            logger.info(f"  - Deletion type: {deletion_type}")
+            logger.info(f"  - Document IDs to delete: {doc_ids_to_delete}")
+            logger.info(f"  - Number of documents: {len(doc_ids_to_delete)}")
+            logger.info(f"  - Delete files: {delete_file}")
+            logger.info(f"  - Delete LLM cache: {delete_llm_cache}")
+
             logger.info("  - Parameter validation passed")
             logger.info("  - Calling lightrag_client.delete_document()...")
-            logger.warning(f"  - DESTRUCTIVE OPERATION: Deleting document {document_id}")
-            
+
+            # Log destructive operation warning
+            if deletion_type == "single":
+                logger.warning(f"  - DESTRUCTIVE OPERATION: Deleting document {document_id}")
+            else:
+                logger.warning(f"  - DESTRUCTIVE OPERATION: Deleting {len(doc_ids_to_delete)} documents: {doc_ids_to_delete}")
+
             try:
-                result = await lightrag_client.delete_document(document_id)
+                result = await lightrag_client.delete_document(
+                    doc_ids=doc_ids_to_delete,
+                    delete_file=delete_file,
+                    delete_llm_cache=delete_llm_cache
+                )
                 logger.info("DELETE_DOCUMENT SUCCESS:")
                 logger.info(f"  - Result type: {type(result)}")
                 logger.info(f"  - Result content: {repr(result)}")
@@ -1237,16 +1307,23 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                         logger.info(f"  - Message: {result_dump.get('message', 'N/A')}")
                     except Exception as e:
                         logger.error(f"  - model_dump() failed: {e}")
-                
+
                 response = _create_success_response(result, tool_name)
                 logger.info(f"  - Success response created")
-                logger.warning(f"  - Document {document_id} has been deleted")
+
+                if deletion_type == "single":
+                    logger.warning(f"  - Document {document_id} has been deleted")
+                else:
+                    logger.warning(f"  - {len(doc_ids_to_delete)} documents have been deleted")
+
                 return response
             except Exception as e:
                 logger.error("DELETE_DOCUMENT FAILED:")
                 logger.error(f"  - Exception type: {type(e)}")
                 logger.error(f"  - Exception message: {str(e)}")
-                logger.error(f"  - Document ID: {document_id}")
+                logger.error(f"  - Document IDs: {doc_ids_to_delete}")
+                logger.error(f"  - Delete file: {delete_file}")
+                logger.error(f"  - Delete LLM cache: {delete_llm_cache}")
                 import traceback
                 logger.error(f"  - Full traceback: {traceback.format_exc()}")
                 raise
