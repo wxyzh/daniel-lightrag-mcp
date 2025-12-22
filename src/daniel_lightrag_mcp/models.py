@@ -178,7 +178,7 @@ class InsertResponse(BaseModel):
     """Response model for document insertion."""
     status: str = Field(..., description="Insertion status")
     message: str = Field(..., description="Status message")
-    track_id: str = Field(..., description="Tracking ID for the insertion")
+    track_id: Optional[str] = Field(None, description="Tracking ID for the insertion")
     id: Optional[str] = None
 
 
@@ -292,7 +292,7 @@ class QueryResult(BaseModel):
 
 class QueryResponse(BaseModel):
     """Response model for text queries."""
-    response: str = Field(..., description="Query response text")
+    response: Optional[str] = Field(None, description="Query response text")
     query: Optional[str] = None
     results: Optional[List[QueryResult]] = None
     total_results: Optional[int] = None
