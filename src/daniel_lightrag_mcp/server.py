@@ -91,7 +91,7 @@ def _validate_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> None:
         "delete_document": [],  # Special validation logic for delete_document
         "query_text": ["query"],
         "query_text_stream": ["query"],
-        "query_data": ["query"],
+        # "query_data": ["query"],  # Disabled: high token consumption
         "check_entity_exists": ["entity_name"],
         "create_entity": ["entity_name", "properties"],
         "update_entity": ["entity_id", "properties"],
@@ -126,7 +126,8 @@ def _validate_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> None:
         if not isinstance(page_size, int) or page_size < 1 or page_size > 100:
             raise LightRAGValidationError("Page size must be an integer between 1 and 100")
     
-    elif tool_name in ["query_text", "query_text_stream", "query_data"]:
+    elif tool_name in ["query_text", "query_text_stream"]:
+        # query_data disabled due to high token consumption
         mode = arguments.get("mode", "mix")
         valid_modes = ["naive", "local", "global", "hybrid", "mix", "bypass"]
         if mode not in valid_modes:
@@ -497,8 +498,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
         #     }
         # ),
     ])
-    
-    # Query Tools (3 tools)
+
+    # Query Tools (2 tools) - query_data disabled due to high token consumption
     tools.extend([
         Tool(
             name=_add_tool_prefix("query_text"),
@@ -672,78 +673,78 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
                 "required": ["query"]
             }
         ),
-        Tool(
-            name=_add_tool_prefix("query_data"),
-            description=_add_description_prefix("Query LightRAG and retrieve raw data (entities, relationships, chunks) without LLM generation. Useful for debugging retrieval quality, data analysis, and custom processing."),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Query text (min 3 characters)"
-                    },
-                    "mode": {
-                        "type": "string",
-                        "description": "Query mode. 'mix' returns entities + relationships + chunks. 'naive' returns only chunks. 'bypass' returns empty data.",
-                        "enum": ["naive", "local", "global", "hybrid", "mix", "bypass"],
-                        "default": "mix"
-                    },
-                    "top_k": {
-                        "type": "integer",
-                        "description": "Number of top entities/relations to retrieve",
-                        "minimum": 1
-                    },
-                    "chunk_top_k": {
-                        "type": "integer",
-                        "description": "Number of text chunks to retrieve from vector search",
-                        "minimum": 1
-                    },
-                    "max_entity_tokens": {
-                        "type": "integer",
-                        "description": "Maximum entity tokens for local mode",
-                        "minimum": 1
-                    },
-                    "max_relation_tokens": {
-                        "type": "integer",
-                        "description": "Maximum relation tokens for global mode",
-                        "minimum": 1
-                    },
-                    "max_total_tokens": {
-                        "type": "integer",
-                        "description": "Maximum total tokens budget for retrieval",
-                        "minimum": 1
-                    },
-                    "hl_keywords": {
-                        "type": "array",
-                        "description": "High-level keywords (auto-generated if empty)",
-                        "items": {"type": "string"}
-                    },
-                    "ll_keywords": {
-                        "type": "array",
-                        "description": "Low-level keywords for retrieval refinement (auto-generated if empty)",
-                        "items": {"type": "string"}
-                    },
-                    "enable_rerank": {
-                        "type": "boolean",
-                        "description": "Whether to enable reranking for chunks",
-                        "default": True
-                    },
-                    "conversation_history": {
-                        "type": "array",
-                        "description": "Conversation history for multi-turn queries",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "role": {"type": "string"},
-                                "content": {"type": "string"}
-                            },
-                            "required": ["role", "content"]
-                        }
-                    }
-                },
-                "required": ["query"]
-            }
-        ),
+        # Tool(
+        #     name=_add_tool_prefix("query_data"),
+        #     description=_add_description_prefix("Query LightRAG and retrieve raw data (entities, relationships, chunks) without LLM generation. Useful for debugging retrieval quality, data analysis, and custom processing."),
+        #     inputSchema={
+        #         "type": "object",
+        #         "properties": {
+        #             "query": {
+        #                 "type": "string",
+        #                 "description": "Query text (min 3 characters)"
+        #             },
+        #             "mode": {
+        #                 "type": "string",
+        #                 "description": "Query mode. 'mix' returns entities + relationships + chunks. 'naive' returns only chunks. 'bypass' returns empty data.",
+        #                 "enum": ["naive", "local", "global", "hybrid", "mix", "bypass"],
+        #                 "default": "mix"
+        #             },
+        #             "top_k": {
+        #                 "type": "integer",
+        #                 "description": "Number of top entities/relations to retrieve",
+        #                 "minimum": 1
+        #             },
+        #             "chunk_top_k": {
+        #                 "type": "integer",
+        #                 "description": "Number of text chunks to retrieve from vector search",
+        #                 "minimum": 1
+        #             },
+        #             "max_entity_tokens": {
+        #                 "type": "integer",
+        #                 "description": "Maximum entity tokens for local mode",
+        #                 "minimum": 1
+        #             },
+        #             "max_relation_tokens": {
+        #                 "type": "integer",
+        #                 "description": "Maximum relation tokens for global mode",
+        #                 "minimum": 1
+        #             },
+        #             "max_total_tokens": {
+        #                 "type": "integer",
+        #                 "description": "Maximum total tokens budget for retrieval",
+        #                 "minimum": 1
+        #             },
+        #             "hl_keywords": {
+        #                 "type": "array",
+        #                 "description": "High-level keywords (auto-generated if empty)",
+        #                 "items": {"type": "string"}
+        #             },
+        #             "ll_keywords": {
+        #                 "type": "array",
+        #                 "description": "Low-level keywords for retrieval refinement (auto-generated if empty)",
+        #                 "items": {"type": "string"}
+        #             },
+        #             "enable_rerank": {
+        #                 "type": "boolean",
+        #                 "description": "Whether to enable reranking for chunks",
+        #                 "default": True
+        #             },
+        #             "conversation_history": {
+        #                 "type": "array",
+        #                 "description": "Conversation history for multi-turn queries",
+        #                 "items": {
+        #                     "type": "object",
+        #                     "properties": {
+        #                         "role": {"type": "string"},
+        #                         "content": {"type": "string"}
+        #                     },
+        #                     "required": ["role", "content"]
+        #                 }
+        #             }
+        #         },
+        #         "required": ["query"]
+        #     }
+        # ),
     ])
 
     # Knowledge Graph Tools (11 tools)
@@ -1893,89 +1894,90 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
                 logger.error(f"  - Full traceback: {traceback.format_exc()}")
                 raise
 
-        elif tool_name == "query_data":
-            logger.info("EXECUTING QUERY_DATA TOOL:")
-            logger.info(f"  - Tool: {tool_name}")
-            logger.info(f"  - Client type: {type(lightrag_client)}")
-            logger.info(f"  - Client base_url: {lightrag_client.base_url}")
-            logger.info(f"  - Raw arguments: {arguments}")
-
-            # Extract parameters
-            query = arguments.get("query", "")
-            mode = arguments.get("mode", "mix")
-            top_k = arguments.get("top_k")
-            chunk_top_k = arguments.get("chunk_top_k")
-            max_entity_tokens = arguments.get("max_entity_tokens")
-            max_relation_tokens = arguments.get("max_relation_tokens")
-            max_total_tokens = arguments.get("max_total_tokens")
-            hl_keywords = arguments.get("hl_keywords")
-            ll_keywords = arguments.get("ll_keywords")
-            enable_rerank = arguments.get("enable_rerank", True)
-            conversation_history = arguments.get("conversation_history")
-
-            logger.info(f"QUERY_DATA PARAMETERS:")
-            logger.info(f"  - query: '{query}' (length: {len(query)})")
-            logger.info(f"  - mode: '{mode}'")
-            logger.info(f"  - top_k: {top_k}")
-            logger.info(f"  - chunk_top_k: {chunk_top_k}")
-            logger.info(f"  - max_entity_tokens: {max_entity_tokens}")
-            logger.info(f"  - max_relation_tokens: {max_relation_tokens}")
-            logger.info(f"  - max_total_tokens: {max_total_tokens}")
-            logger.info(f"  - hl_keywords: {hl_keywords}")
-            logger.info(f"  - ll_keywords: {ll_keywords}")
-            logger.info(f"  - enable_rerank: {enable_rerank}")
-            logger.info(f"  - conversation_history: {conversation_history}")
-
-            # Validate query
-            if not query or not query.strip():
-                logger.error("QUERY_DATA VALIDATION ERROR:")
-                logger.error("  - Query is empty or whitespace only")
-                raise LightRAGValidationError("Query cannot be empty")
-
-            valid_modes = ["naive", "local", "global", "hybrid", "mix", "bypass"]
-            if mode not in valid_modes:
-                logger.error("QUERY_DATA MODE ERROR:")
-                logger.error(f"  - Invalid mode: '{mode}'")
-                logger.error(f"  - Valid modes: {valid_modes}")
-                raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
-
-            logger.info("  - Parameter validation passed")
-            logger.info("  - Calling lightrag_client.query_data()...")
-
-            try:
-                result = await lightrag_client.query_data(
-                    query=query,
-                    mode=mode,
-                    top_k=top_k,
-                    chunk_top_k=chunk_top_k,
-                    max_entity_tokens=max_entity_tokens,
-                    max_relation_tokens=max_relation_tokens,
-                    max_total_tokens=max_total_tokens,
-                    hl_keywords=hl_keywords,
-                    ll_keywords=ll_keywords,
-                    enable_rerank=enable_rerank,
-                    conversation_history=conversation_history
-                )
-
-                logger.info("QUERY_DATA SUCCESS:")
-                logger.info(f"  - Result type: {type(result)}")
-                logger.info(f"  - Entity count: {len(result.data.entities)}")
-                logger.info(f"  - Relationship count: {len(result.data.relationships)}")
-                logger.info(f"  - Chunk count: {len(result.data.chunks)}")
-                logger.info(f"  - Reference count: {len(result.data.references)}")
-                logger.info(f"  - Metadata: mode={result.metadata.query_mode}")
-
-                response = _create_success_response(result, tool_name)
-                logger.info(f"  - Success response created")
-                return response
-
-            except Exception as e:
-                logger.error("QUERY_DATA FAILED:")
-                logger.error(f"  - Exception type: {type(e)}")
-                logger.error(f"  - Exception message: {str(e)}")
-                import traceback
-                logger.error(f"  - Full traceback: {traceback.format_exc()}")
-                raise
+        # query_data tool disabled due to high token consumption
+        # elif tool_name == "query_data":
+        #     logger.info("EXECUTING QUERY_DATA TOOL:")
+        #     logger.info(f"  - Tool: {tool_name}")
+        #     logger.info(f"  - Client type: {type(lightrag_client)}")
+        #     logger.info(f"  - Client base_url: {lightrag_client.base_url}")
+        #     logger.info(f"  - Raw arguments: {arguments}")
+        #
+        #     # Extract parameters
+        #     query = arguments.get("query", "")
+        #     mode = arguments.get("mode", "mix")
+        #     top_k = arguments.get("top_k")
+        #     chunk_top_k = arguments.get("chunk_top_k")
+        #     max_entity_tokens = arguments.get("max_entity_tokens")
+        #     max_relation_tokens = arguments.get("max_relation_tokens")
+        #     max_total_tokens = arguments.get("max_total_tokens")
+        #     hl_keywords = arguments.get("hl_keywords")
+        #     ll_keywords = arguments.get("ll_keywords")
+        #     enable_rerank = arguments.get("enable_rerank", True)
+        #     conversation_history = arguments.get("conversation_history")
+        #
+        #     logger.info(f"QUERY_DATA PARAMETERS:")
+        #     logger.info(f"  - query: '{query}' (length: {len(query)})")
+        #     logger.info(f"  - mode: '{mode}'")
+        #     logger.info(f"  - top_k: {top_k}")
+        #     logger.info(f"  - chunk_top_k: {chunk_top_k}")
+        #     logger.info(f"  - max_entity_tokens: {max_entity_tokens}")
+        #     logger.info(f"  - max_relation_tokens: {max_relation_tokens}")
+        #     logger.info(f"  - max_total_tokens: {max_total_tokens}")
+        #     logger.info(f"  - hl_keywords: {hl_keywords}")
+        #     logger.info(f"  - ll_keywords: {ll_keywords}")
+        #     logger.info(f"  - enable_rerank: {enable_rerank}")
+        #     logger.info(f"  - conversation_history: {conversation_history}")
+        #
+        #     # Validate query
+        #     if not query or not query.strip():
+        #         logger.error("QUERY_DATA VALIDATION ERROR:")
+        #         logger.error("  - Query is empty or whitespace only")
+        #         raise LightRAGValidationError("Query cannot be empty")
+        #
+        #     valid_modes = ["naive", "local", "global", "hybrid", "mix", "bypass"]
+        #     if mode not in valid_modes:
+        #         logger.error("QUERY_DATA MODE ERROR:")
+        #         logger.error(f"  - Invalid mode: '{mode}'")
+        #         logger.error(f"  - Valid modes: {valid_modes}")
+        #         raise LightRAGValidationError(f"Invalid query mode '{mode}'. Must be one of: {valid_modes}")
+        #
+        #     logger.info("  - Parameter validation passed")
+        #     logger.info("  - Calling lightrag_client.query_data()...")
+        #
+        #     try:
+        #         result = await lightrag_client.query_data(
+        #             query=query,
+        #             mode=mode,
+        #             top_k=top_k,
+        #             chunk_top_k=chunk_top_k,
+        #             max_entity_tokens=max_entity_tokens,
+        #             max_relation_tokens=max_relation_tokens,
+        #             max_total_tokens=max_total_tokens,
+        #             hl_keywords=hl_keywords,
+        #             ll_keywords=ll_keywords,
+        #             enable_rerank=enable_rerank,
+        #             conversation_history=conversation_history
+        #         )
+        #
+        #         logger.info("QUERY_DATA SUCCESS:")
+        #         logger.info(f"  - Result type: {type(result)}")
+        #         logger.info(f"  - Entity count: {len(result.data.entities)}")
+        #         logger.info(f"  - Relationship count: {len(result.data.relationships)}")
+        #         logger.info(f"  - Chunk count: {len(result.data.chunks)}")
+        #         logger.info(f"  - Reference count: {len(result.data.references)}")
+        #         logger.info(f"  - Metadata: mode={result.metadata.query_mode}")
+        #
+        #         response = _create_success_response(result, tool_name)
+        #         logger.info(f"  - Success response created")
+        #         return response
+        #
+        #     except Exception as e:
+        #         logger.error("QUERY_DATA FAILED:")
+        #         logger.error(f"  - Exception type: {type(e)}")
+        #         logger.error(f"  - Exception message: {str(e)}")
+        #         import traceback
+        #         logger.error(f"  - Full traceback: {traceback.format_exc()}")
+        #         raise
 
         # Knowledge Graph Tools (11 tools)
         elif tool_name == "get_knowledge_graph":
