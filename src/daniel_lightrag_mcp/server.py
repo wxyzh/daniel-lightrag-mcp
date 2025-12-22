@@ -47,11 +47,37 @@ logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)  # Reduce httpx noise
 logging.getLogger("mcp").setLevel(logging.INFO)
 
+# Read tool prefix from environment variable
+TOOL_PREFIX = os.getenv("LIGHTRAG_TOOL_PREFIX", "")
+if TOOL_PREFIX:
+    logger.info(f"Tool prefix enabled: '{TOOL_PREFIX}'")
+
 # Initialize the MCP server
 server = Server("daniel-lightrag-mcp")
 
 # Global client instance
 lightrag_client: Optional[LightRAGClient] = None
+
+
+def _add_tool_prefix(name: str) -> str:
+    """Add prefix to tool name if configured."""
+    if TOOL_PREFIX:
+        return f"{TOOL_PREFIX}{name}"
+    return name
+
+
+def _remove_tool_prefix(name: str) -> str:
+    """Remove prefix from tool name if configured."""
+    if TOOL_PREFIX and name.startswith(TOOL_PREFIX):
+        return name[len(TOOL_PREFIX):]
+    return name
+
+
+def _add_description_prefix(description: str) -> str:
+    """Add prefix to tool description if configured."""
+    if TOOL_PREFIX:
+        return f"[{TOOL_PREFIX.rstrip('_')}] {description}"
+    return description
 
 
 def _validate_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> None:
@@ -338,8 +364,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
     # Document Management Tools (8 tools)
     tools.extend([
         Tool(
-            name="insert_text",
-            description="Insert text content into LightRAG",
+            name=_add_tool_prefix("insert_text"),
+            description=_add_description_prefix("Insert text content into LightRAG"),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -352,8 +378,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="insert_texts",
-            description="Insert multiple text documents into LightRAG",
+            name=_add_tool_prefix("insert_texts"),
+            description=_add_description_prefix("Insert multiple text documents into LightRAG"),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -375,8 +401,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="upload_document",
-            description="Upload a document file to LightRAG",
+            name=_add_tool_prefix("upload_document"),
+            description=_add_description_prefix("Upload a document file to LightRAG"),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -389,8 +415,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="scan_documents",
-            description="Scan for new documents in LightRAG",
+            name=_add_tool_prefix("scan_documents"),
+            description=_add_description_prefix("Scan for new documents in LightRAG"),
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -398,8 +424,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="get_documents",
-            description="Retrieve all documents from LightRAG",
+            name=_add_tool_prefix("get_documents"),
+            description=_add_description_prefix("Retrieve all documents from LightRAG"),
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -407,8 +433,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="get_documents_paginated",
-            description="Retrieve documents with pagination. IMPORTANT: page_size must be 10-100 (server enforces minimum for performance). Use page_size=20 for typical browsing.",
+            name=_add_tool_prefix("get_documents_paginated"),
+            description=_add_description_prefix("Retrieve documents with pagination. IMPORTANT: page_size must be 10-100 (server enforces minimum for performance). Use page_size=20 for typical browsing."),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -428,8 +454,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="delete_document",
-            description="Delete one or more documents by ID. Use either 'document_id' for single deletion or 'document_ids' for batch deletion.",
+            name=_add_tool_prefix("delete_document"),
+            description=_add_description_prefix("Delete one or more documents by ID. Use either 'document_id' for single deletion or 'document_ids' for batch deletion."),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -468,8 +494,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
     # Query Tools (2 tools)
     tools.extend([
         Tool(
-            name="query_text",
-            description="Query LightRAG with text",
+            name=_add_tool_prefix("query_text"),
+            description=_add_description_prefix("Query LightRAG with text"),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -493,8 +519,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="query_text_stream",
-            description="Stream query results from LightRAG",
+            name=_add_tool_prefix("query_text_stream"),
+            description=_add_description_prefix("Stream query results from LightRAG"),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -522,8 +548,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
     # Knowledge Graph Tools (7 tools)
     tools.extend([
         Tool(
-            name="get_knowledge_graph",
-            description="Retrieve the knowledge graph from LightRAG",
+            name=_add_tool_prefix("get_knowledge_graph"),
+            description=_add_description_prefix("Retrieve the knowledge graph from LightRAG"),
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -531,8 +557,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="get_graph_labels",
-            description="Get labels from the knowledge graph",
+            name=_add_tool_prefix("get_graph_labels"),
+            description=_add_description_prefix("Get labels from the knowledge graph"),
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -540,8 +566,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="check_entity_exists",
-            description="Check if an entity exists in the knowledge graph",
+            name=_add_tool_prefix("check_entity_exists"),
+            description=_add_description_prefix("Check if an entity exists in the knowledge graph"),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -554,8 +580,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="update_entity",
-            description="Update an entity in the knowledge graph",
+            name=_add_tool_prefix("update_entity"),
+            description=_add_description_prefix("Update an entity in the knowledge graph"),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -590,8 +616,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
         #     }
         # ),
         Tool(
-            name="update_relation",
-            description="Update a relation in the knowledge graph",
+            name=_add_tool_prefix("update_relation"),
+            description=_add_description_prefix("Update a relation in the knowledge graph"),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -612,8 +638,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="delete_entity",
-            description="Delete an entity from the knowledge graph",
+            name=_add_tool_prefix("delete_entity"),
+            description=_add_description_prefix("Delete an entity from the knowledge graph"),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -626,8 +652,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="delete_relation",
-            description="Delete a relation from the knowledge graph",
+            name=_add_tool_prefix("delete_relation"),
+            description=_add_description_prefix("Delete a relation from the knowledge graph"),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -644,8 +670,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
     # System Management Tools (5 tools)
     tools.extend([
         Tool(
-            name="get_pipeline_status",
-            description="Get the pipeline status from LightRAG",
+            name=_add_tool_prefix("get_pipeline_status"),
+            description=_add_description_prefix("Get the pipeline status from LightRAG"),
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -653,8 +679,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="get_track_status",
-            description="Get track status by ID",
+            name=_add_tool_prefix("get_track_status"),
+            description=_add_description_prefix("Get track status by ID"),
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -667,8 +693,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
             }
         ),
         Tool(
-            name="get_document_status_counts",
-            description="Get document status counts",
+            name=_add_tool_prefix("get_document_status_counts"),
+            description=_add_description_prefix("Get document status counts"),
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -685,8 +711,8 @@ async def handle_list_tools() -> List[Tool]:#ListToolsResult:
         #     }
         # ),
         Tool(
-            name="get_health",
-            description="Check LightRAG server health",
+            name=_add_tool_prefix("get_health"),
+            description=_add_description_prefix("Check LightRAG server health"),
             inputSchema={
                 "type": "object",
                 "properties": {},
@@ -868,11 +894,15 @@ async def handle_call_tool(self, request: CallToolRequest) -> dict:
             logger.info(f"    - request['{key}'] = {repr(value)} (type: {type(value)})")
     
     # The MCP library passes tool_name as 'self' and empty dict as 'request'
-    tool_name = self  # self is the tool name string
+    tool_name_with_prefix = self  # self is the tool name string (may include prefix)
     arguments = request or {}   # arguments are always empty for now
-    
+
+    # Remove prefix to get original tool name
+    tool_name = _remove_tool_prefix(tool_name_with_prefix)
+
     logger.info(f"EXTRACTED PARAMETERS:")
-    logger.info(f"  - tool_name: '{tool_name}' (type: {type(tool_name)})")
+    logger.info(f"  - tool_name_with_prefix: '{tool_name_with_prefix}' (type: {type(tool_name_with_prefix)})")
+    logger.info(f"  - tool_name (original): '{tool_name}' (type: {type(tool_name)})")
     logger.info(f"  - arguments: {arguments} (type: {type(arguments)})")
     logger.info(f"  - arguments length: {len(arguments)}")
     
