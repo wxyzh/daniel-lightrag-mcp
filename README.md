@@ -19,6 +19,7 @@ A comprehensive MCP (Model Context Protocol) server that provides **100% functio
 - **Knowledge Graph**: 6 tools for accessing, checking, updating, and managing entities and relations
 - **System Management**: 4 tools for health checks, status monitoring, and cache management
 - **Multiple Instance Support**: Run multiple MCP servers with tool prefixes (NEW! 🎉)
+- **HTTP Server**: REST API with streaming support and prefix-based routing (NEW! 🚀)
 - **Comprehensive Error Handling**: Robust error handling with detailed error messages
 - **Full API Coverage**: Complete integration with LightRAG API 0.1.96+
 
@@ -45,6 +46,44 @@ A comprehensive MCP (Model Context Protocol) server that provides **100% functio
 
 4. **Test the connection**:
    Use the `get_health` tool to verify everything is working.
+
+## HTTP Server (NEW! 🚀)
+
+In addition to the stdio MCP server, you can also run a REST API HTTP server:
+
+```bash
+# Install with HTTP dependencies
+pip install -e .
+
+# Start HTTP server
+daniel-lightrag-http
+
+# Or specify host and port
+daniel-lightrag-http --host 0.0.0.0 --port 8080
+```
+
+**HTTP API Features:**
+- 🌐 REST API for all MCP tools
+- 🔀 Prefix-based routing: `/mcp/{prefix}/{tool_name}`
+- 📡 Streaming HTTP responses (NDJSON format)
+- 📚 Automatic API docs at `/docs`
+- 🔌 Completely separate from stdio MCP
+
+**Quick Test:**
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# List tools
+curl http://localhost:8000/mcp/novel_style/tools
+
+# Execute tool
+curl -X POST http://localhost:8000/mcp/novel_style/novel_style_query_text \
+  -H "Content-Type: application/json" \
+  -d '{"arguments": {"query": "What is the writing style?", "mode": "hybrid"}}'
+```
+
+**See full documentation:** [`docs/HTTP_SERVER_GUIDE.md`](docs/HTTP_SERVER_GUIDE.md)
 
 ## Installation
 

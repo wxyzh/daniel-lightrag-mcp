@@ -26,6 +26,8 @@ dependencies = [
     "httpx>=0.24.0",
     "pydantic>=2.0.0",
     "anyio>=3.0.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
 ]
 
 [project.optional-dependencies]
@@ -41,6 +43,7 @@ dev = [
 
 [project.scripts]
 daniel-lightrag-mcp = "daniel_lightrag_mcp.cli:cli"
+daniel-lightrag-http = "daniel_lightrag_mcp.http_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Streamable HTTP Server** (NEW! 🚀)
+  - FastAPI-based REST API server exposing all MCP tools
+  - Prefix-based routing: `/mcp/{prefix}/{tool_name}`
+  - Streaming HTTP responses using NDJSON format
+  - Multiple instance support via environment configuration
+  - Automatic API documentation (Swagger/ReDoc)
+  - Separate CLI command: `daniel-lightrag-http`
+  - Complete separation from stdio MCP server
+
+- **HTTP Server Documentation**
+  - Complete HTTP server guide (`docs/HTTP_SERVER_GUIDE.md`)
+  - Python client examples (`examples/http_client_python.py`)
+  - JavaScript/Node.js client examples (`examples/http_client_javascript.js`)
+  - Deployment guides (Docker, nginx, systemd)
+
+- **Dependencies**
+  - Added `fastapi>=0.104.0` for HTTP server
+  - Added `uvicorn[standard]>=0.24.0` for ASGI server
+
 - Tool prefix support via `LIGHTRAG_TOOL_PREFIX` environment variable
   - Allows running multiple MCP server instances with different tool names
   - Automatically adds prefix to all tool names (e.g., `novel_style_query_text`)
