@@ -180,6 +180,9 @@ cython_debug/
 # Archive directory should be included in version control
 archive/
 
+# Claude Code settings (should not be tracked)
+.claude/
+
 # Temporary test files (but not archived ones)
 temp_test_*.py
 debug_temp_*.py

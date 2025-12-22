@@ -36,7 +36,7 @@ class TestLightRAGClientInitialization:
         
         assert client.base_url == "http://localhost:9621"
         assert client.api_key is None
-        assert client.timeout == 30.0
+        assert client.timeout == 300.0
         assert client.client is not None
     
     def test_client_initialization_custom(self):

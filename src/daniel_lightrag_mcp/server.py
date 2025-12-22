@@ -60,23 +60,31 @@ lightrag_client: Optional[LightRAGClient] = None
 
 
 def _add_tool_prefix(name: str) -> str:
-    """Add prefix to tool name if configured."""
+    """Add prefix to tool name if configured. Format: {prefix}_{tool}"""
     if TOOL_PREFIX:
-        return f"{TOOL_PREFIX}{name}"
+        # Add underscore separator, avoiding double underscore if prefix ends with _
+        prefix = TOOL_PREFIX.rstrip('_') + '_' if TOOL_PREFIX else ''
+        return f"{prefix}{name}"
     return name
 
 
 def _remove_tool_prefix(name: str) -> str:
-    """Remove prefix from tool name if configured."""
-    if TOOL_PREFIX and name.startswith(TOOL_PREFIX):
-        return name[len(TOOL_PREFIX):]
+    """Remove prefix from tool name if configured. Format: {prefix}_{tool}"""
+    if TOOL_PREFIX:
+        # Handle prefix with underscore: prefix_ or prefix
+        prefix_with_underscore = TOOL_PREFIX.rstrip('_') + '_'
+        if name.startswith(prefix_with_underscore):
+            return name[len(prefix_with_underscore):]
+        elif name.startswith(TOOL_PREFIX):
+            return name[len(TOOL_PREFIX):]
     return name
 
 
 def _add_description_prefix(description: str) -> str:
-    """Add prefix to tool description if configured."""
+    """Add prefix to tool description if configured. Format: [{prefix}] description"""
     if TOOL_PREFIX:
-        return f"[{TOOL_PREFIX.rstrip('_')}] {description}"
+        prefix = TOOL_PREFIX.rstrip('_')
+        return f"[{prefix}] {description}"
     return description
 
 
@@ -87,16 +95,16 @@ def _validate_tool_arguments(tool_name: str, arguments: Dict[str, Any]) -> None:
         "insert_text": ["text"],
         "insert_texts": ["texts"],
         "upload_document": ["file_path"],
-        "get_documents_paginated": ["page", "page_size"],
+        "get_documents_paginated": [],  # page and page_size have defaults
         "delete_document": [],  # Special validation logic for delete_document
         "query_text": ["query"],
         "query_text_stream": ["query"],
         # "query_data": ["query"],  # Disabled: high token consumption
         "check_entity_exists": ["entity_name"],
-        "create_entity": ["entity_name", "properties"],
-        "update_entity": ["entity_id", "properties"],
-        "create_relation": ["source_entity", "target_entity", "properties"],
-        "update_relation": ["source_id", "target_id", "updated_data"],
+        "create_entity": ["entity_name"],  # entity_data is optional
+        "update_entity": ["entity_name"],  # updated_data is optional
+        "create_relation": ["source_entity", "target_entity"],  # relation_data is optional
+        "update_relation": ["source_id", "target_id"],  # updated_data is optional
         "delete_entity": ["entity_name"],
         "delete_relation": ["source_entity", "target_entity"],
         "get_popular_labels": [],
