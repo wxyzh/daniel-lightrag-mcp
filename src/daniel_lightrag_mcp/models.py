@@ -129,9 +129,9 @@ class QueryRequest(BaseModel):
     include_chunk_content: bool = Field(False, description="Whether to include chunk content in references")
     enable_rerank: bool = Field(True, description="Whether to enable reranking")
 
-    # Keywords parameters
-    hl_keywords: Optional[List[str]] = Field(None, description="High-level keywords for retrieval")
-    ll_keywords: Optional[List[str]] = Field(None, description="Low-level keywords for retrieval")
+    # Keywords parameters - use default_factory=list to avoid None serialization
+    hl_keywords: List[str] = Field(default_factory=list, description="High-level keywords for retrieval")
+    ll_keywords: List[str] = Field(default_factory=list, description="Low-level keywords for retrieval")
 
     # Conversation history
     conversation_history: Optional[List[Dict[str, str]]] = Field(None, description="Conversation history for multi-turn queries")
