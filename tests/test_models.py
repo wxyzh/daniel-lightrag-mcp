@@ -138,40 +138,40 @@ class TestRequestModels:
     def test_insert_text_request_valid(self):
         """Test valid InsertTextRequest creation."""
         request = InsertTextRequest(
-            title="Test Title",
-            content="Test content"
+            text="Test content",
+            file_source="test.txt"
         )
-        
-        assert request.title == "Test Title"
-        assert request.content == "Test content"
-    
+
+        assert request.text == "Test content"
+        assert request.file_source == "test.txt"
+
     def test_insert_text_request_minimal(self):
         """Test InsertTextRequest with minimal fields."""
-        request = InsertTextRequest(content="Test content")
-        
-        assert request.title is None
-        assert request.content == "Test content"
-    
+        request = InsertTextRequest(text="Test content")
+
+        assert request.text == "Test content"
+        assert request.file_source == "text_input.txt"  # default value
+
     def test_insert_text_request_missing_content(self):
         """Test InsertTextRequest validation error."""
         with pytest.raises(ValidationError) as exc_info:
-            InsertTextRequest(title="Test")
-        
+            InsertTextRequest(file_source="test.txt")
+
         errors = exc_info.value.errors()
         assert len(errors) == 1
-        assert errors[0]["loc"] == ("content",)
+        assert errors[0]["loc"] == ("text",)
     
     def test_insert_texts_request_valid(self):
         """Test valid InsertTextsRequest creation."""
-        texts = [
-            TextDocument(content="Text 1"),
-            TextDocument(content="Text 2", title="Title 2")
-        ]
-        request = InsertTextsRequest(texts=texts)
-        
+        texts = ["Text 1", "Text 2"]
+        file_sources = ["source1.txt", "source2.txt"]
+        request = InsertTextsRequest(texts=texts, file_sources=file_sources)
+
         assert len(request.texts) == 2
-        assert request.texts[0].content == "Text 1"
-        assert request.texts[1].title == "Title 2"
+        assert request.texts[0] == "Text 1"
+        assert request.texts[1] == "Text 2"
+        assert len(request.file_sources) == 2
+        assert request.file_sources[0] == "source1.txt"
     
     def test_query_request_valid(self):
         """Test valid QueryRequest creation."""
